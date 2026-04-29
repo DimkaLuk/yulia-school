@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Школа Юлії Лук'янчук</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<!-- React -->
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  background:#F2F2F7;
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',sans-serif;
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+input,select,textarea,button{font-family:inherit;}
+input:focus,select:focus,textarea:focus{outline:none;}
+::-webkit-scrollbar{display:none;}
+::placeholder{color:rgba(60,60,67,0.3);}
+.glass{background:rgba(255,255,255,0.72);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);}
+.card{background:#fff;border-radius:16px;overflow:hidden;}
+.press:active{opacity:0.6;transform:scale(0.98);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ── FIREBASE INIT ──────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyCP9bT4zeShWZs7GZFnCtpQHTKekF5BL1U",
+  authDomain: "yulia-school.firebaseapp.com",
+  projectId: "yulia-school",
+  storageBucket: "yulia-school.firebasestorage.app",
+  messagingSenderId: "156599868464",
+  appId: "1:156599868464:web:5e4a1f83699c61852c61f5"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const DOC = db.collection("school").doc("data");
+
+// Прочитати дані
+async function fbLoad() {
+  try {
+    const snap = await DOC.get();
+    return snap.exists ? snap.data() : null;
+  } catch(e) {
+    console.error("Firebase read error:", e);
+    return null;
+  }
+}
+
+// Зберегти дані — з перевіркою та захистом від порожнього запису
+async function fbSave(data) {
+  try {
+    // Захист: ніколи не зберігаємо якщо основні масиви відсутні
+    if (!data || typeof data !== 'object') {
+      console.error("fbSave: invalid data, skipping");
+      return false;
+    }
+    // Переконуємось що всі поля є масивами
+    const safe = {
+      students: Array.isArray(data.students) ? data.students : [],
+      lessons:  Array.isArray(data.lessons)  ? data.lessons  : [],
+      payments: Array.isArray(data.payments) ? data.payments : [],
+      requests: Array.isArray(data.requests) ? data.requests : [],
+      teacherChatId: data.teacherChatId || "",
+    };
+    await DOC.set(safe);
+    return true;
+  } catch(e) {
+    console.error("Firebase write error:", e);
+    return false;
+  }
+}
+
+// Слухати зміни в реальному часі
+function fbListen(callback) {
+  return DOC.onSnapshot(snap => {
+    if (snap.exists) {
+      const d = snap.data();
+      // Перевіряємо що дані валідні перед оновленням стану
+      if (d && typeof d === 'object') {
+        callback(d);
+      }
+    }
+  }, err => console.error("Firebase listen error:", err));
+}
+</script>
+
+<script type="text/babel">
+const{useState,useEffect,useRef,useCallback}=React;
+
+const TG_TOKEN="8277315044:AAHmSDZPm13w8gp_1xrjfu1pHvd6Hl0QCDA";
+const TG_API=`https://api.telegram.org/bot${TG_TOKEN}`;
+const LOGIN="yulia", PASS="school2024";
+
+const tgSend=async(chatId,text)=>{
+  if(!chatId)return{ok:false,error:"Chat ID не вказано"};
+  try{
+    const r=await fetch(`${TG_API}/sendMessage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:chatId,text,parse_mode:"HTML"})});
+    const d=await r.json();
+    return d.ok?{ok:true}:{ok:false,error:d.description};
+  }catch{return{ok:false,error:"Помилка з'єднання"};}
+};
+
+const iOS={
+  blue:"#007AFF", blueT:"rgba(0,122,255,0.1)",
+  green:"#34C759", greenT:"rgba(52,199,89,0.1)",
+  red:"#FF3B30",   redT:"rgba(255,59,48,0.1)",
+  orange:"#FF9500",orangeT:"rgba(255,149,0,0.1)",
+  purple:"#AF52DE",purpleT:"rgba(175,82,222,0.1)",
+  teal:"#30B0C7",  indigo:"#5856D6",
+  bg:"#F2F2F7", bg2:"#FFFFFF",
+  label:"#000000", label2:"rgba(60,60,67,0.6)",
+  label3:"rgba(60,60,67,0.36)", label4:"rgba(60,60,67,0.18)",
+  sep:"rgba(60,60,67,0.29)", sepNT:"rgba(60,60,67,0.12)",
+  fill:"rgba(120,120,128,0.2)", fill2:"rgba(120,120,128,0.16)",
+  fill3:"rgba(118,118,128,0.12)", fill4:"rgba(116,116,128,0.08)",
+};
+
+const MONTHS=["Січень","Лютий","Березень","Квітень","Травень","Червень","Липень","Серпень","Вересень","Жовтень","Листопад","Грудень"];
+const MONTHS_GEN=["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
+const WD=["Пн","Вт","Ср","Чт","Пт","Сб","Нд"];
+
+const uid=()=>`${Date.now().toString(36)}${Math.random().toString(36).substr(2,4)}`;
+const today=()=>new Date().toISOString().split("T")[0];
+const off=(n)=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().split("T")[0];};
+const fmtD=(s)=>{if(!s)return"";const d=new Date(s+"T00:00:00");return`${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`;};
+const fmtFull=(s)=>{if(!s)return"";const d=new Date(s+"T00:00:00");return`${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;};
+const fmtM=(n)=>`${Number(n||0).toLocaleString("uk-UA")} ₴`;
+const thisMo=()=>today().substr(0,7);
+
+const EMPTY=()=>({students:[],lessons:[],payments:[],requests:[],teacherChatId:""});
+
+// ── UI COMPONENTS ──────────────────────────────────────────
+const LBadge=({status})=>{
+  const m={planned:{bg:iOS.orangeT,color:iOS.orange,l:"Заплановано"},completed:{bg:iOS.greenT,color:iOS.green,l:"Проведено"},cancelled:{bg:iOS.redT,color:iOS.red,l:"Скасовано"}};
+  const s=m[status]||m.planned;
+  return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:s.bg,color:s.color,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}><span style={{width:5,height:5,borderRadius:"50%",background:s.color,flexShrink:0}}/>{s.l}</span>;
+};
+const SBadge=({status})=>{
+  if(status==="finished")return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:iOS.purpleT,color:iOS.purple,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}><span style={{width:5,height:5,borderRadius:"50%",background:iOS.purple}}/>Завершив</span>;
+  return<span style={{display:"inline-flex",alignItems:"center",gap:5,background:iOS.greenT,color:iOS.green,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}><span style={{width:5,height:5,borderRadius:"50%",background:iOS.green}}/>Активний</span>;
+};
+const Chip=({label,color=iOS.blue})=>(
+  <span style={{background:color+"18",color,fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:20,display:"inline-block"}}>{label}</span>
+);
+const IBtn=({children,onClick,color=iOS.blue,v="filled",sm,full,disabled})=>{
+  const s={filled:{background:disabled?iOS.fill:color,color:disabled?iOS.label3:"#fff"},tinted:{background:disabled?iOS.fill4:color+"1A",color:disabled?iOS.label3:color},plain:{background:"transparent",color:disabled?iOS.label3:color},gray:{background:disabled?iOS.fill4:iOS.fill,color:disabled?iOS.label3:iOS.label},destructive:{background:disabled?iOS.fill4:iOS.redT,color:disabled?iOS.label3:iOS.red}};
+  const style=s[v]||s.filled;
+  return<button onClick={disabled?undefined:onClick} className="press" style={{border:"none",borderRadius:sm?10:12,padding:sm?"8px 16px":"13px 22px",fontSize:sm?14:16,fontWeight:600,cursor:disabled?"default":"pointer",letterSpacing:"-0.2px",width:full?"100%":"auto",transition:"opacity 0.15s, transform 0.1s",...style}}>{children}</button>;
+};
+const IField=({label,value,onChange,type="text",placeholder,rows,options,hint})=>(
+  <div style={{padding:"12px 16px",borderBottom:`0.5px solid ${iOS.sepNT}`}}>
+    {label&&<div style={{fontSize:13,color:iOS.label2,marginBottom:4}}>{label}</div>}
+    {options
+      ?<select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:"transparent",border:"none",fontSize:16,color:iOS.label,padding:0,appearance:"none"}}>
+        {options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+      </select>
+      :rows
+        ?<textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} placeholder={placeholder} style={{width:"100%",background:"transparent",border:"none",fontSize:16,color:iOS.label,resize:"none",lineHeight:1.5}}/>
+        :<input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",background:"transparent",border:"none",fontSize:16,color:iOS.label}}/>
+    }
+    {hint&&<div style={{fontSize:12,color:iOS.label3,marginTop:4}}>{hint}</div>}
+  </div>
+);
+const Card=({children,style:xs,onClick,pad=true})=>(
+  <div onClick={onClick} className="card" style={{...pad?{padding:20}:{},...onClick?{cursor:"pointer"}:{},...xs}}>{children}</div>
+);
+const Row=({icon,iconBg,label,sub,right,rightColor,onClick,badge,last})=>(
+  <div onClick={onClick} className={onClick?"press":""} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:last?"none":`0.5px solid ${iOS.sepNT}`,cursor:onClick?"pointer":"default",background:"#fff"}}>
+    {icon&&<div style={{width:32,height:32,borderRadius:8,background:iconBg||iOS.blueT,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{icon}</div>}
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:16,color:iOS.label}}>{label}</div>
+      {sub&&<div style={{fontSize:13,color:iOS.label2,marginTop:1}}>{sub}</div>}
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      {badge&&<span style={{background:iOS.red,color:"#fff",fontSize:11,fontWeight:700,padding:"1px 6px",borderRadius:10}}>{badge}</span>}
+      {right&&<span style={{fontSize:15,color:rightColor||iOS.label2,fontWeight:600}}>{right}</span>}
+      {onClick&&<span style={{color:iOS.label3,fontSize:18}}>›</span>}
+    </div>
+  </div>
+);
+const Section=({title,footer,children,style:xs})=>(
+  <div style={{marginBottom:28,...xs}}>
+    {title&&<div style={{fontSize:13,color:iOS.label2,textTransform:"uppercase",letterSpacing:"0.04em",padding:"0 20px 6px"}}>{title}</div>}
+    <div className="card" style={{marginLeft:16,marginRight:16,overflow:"hidden",boxShadow:"0 1px 0 rgba(0,0,0,0.04)"}}>{children}</div>
+    {footer&&<div style={{fontSize:13,color:iOS.label2,padding:"8px 20px 0",lineHeight:1.5}}>{footer}</div>}
+  </div>
+);
+const Sheet=({title,onClose,children})=>(
+  <div style={{position:"fixed",inset:0,zIndex:400,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+    <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.4)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
+    <div style={{position:"relative",background:"#F2F2F7",borderRadius:"20px 20px 0 0",height:"88vh",overflowY:"auto",zIndex:1,WebkitOverflowScrolling:"touch",maxWidth:540,margin:"0 auto",width:"100%"}}>
+      <div style={{position:"sticky",top:0,background:"#F2F2F7",zIndex:2,borderRadius:"20px 20px 0 0"}}>
+        <div style={{display:"flex",justifyContent:"center",padding:"12px 0 8px"}}>
+          <div style={{width:40,height:4,borderRadius:2,background:"rgba(120,120,128,0.3)"}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 20px 14px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+          <h2 style={{fontSize:17,fontWeight:700,color:iOS.label,letterSpacing:"-0.3px"}}>{title}</h2>
+          <button onClick={onClose} style={{background:"rgba(120,120,128,0.2)",border:"none",width:30,height:30,borderRadius:"50%",cursor:"pointer",color:"rgba(60,60,67,0.6)",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>×</button>
+        </div>
+      </div>
+      <div style={{padding:"16px 0 60px"}}>{children}</div>
+    </div>
+  </div>
+);
+
+// ── АВТОРИЗАЦІЯ ───────────────────────────────────────────
+const LoginScreen=({onLogin})=>{
+  const[l,setL]=useState("");
+  const[pass,setPass]=useState("");
+  const[error,setError]=useState("");
+  const[show,setShow]=useState(false);
+  const go=()=>{
+    if(l===LOGIN&&pass===PASS){sessionStorage.setItem("auth","1");onLogin();}
+    else{setError("Невірний логін або пароль");setTimeout(()=>setError(""),3000);}
+  };
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(180deg,#1C1C1E 0%,#2C2C2E 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{textAlign:"center",marginBottom:40}}>
+        <div style={{width:80,height:80,borderRadius:24,background:"rgba(255,255,255,0.1)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.15)",display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:18}}>
+          <span style={{fontSize:28,fontWeight:800,color:"#fff"}}>ЮЛ</span>
+        </div>
+        <h1 style={{color:"#fff",fontSize:24,fontWeight:800,letterSpacing:"-0.5px",marginBottom:6}}>Школа Юлії Лук'янчук</h1>
+        <p style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>Кабінет вчителя</p>
+      </div>
+      <div style={{width:"100%",maxWidth:360}}>
+        <div style={{background:"rgba(255,255,255,0.08)",backdropFilter:"blur(20px)",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginBottom:12}}>
+          <div style={{padding:"14px 18px",borderBottom:"0.5px solid rgba(255,255,255,0.08)"}}>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:4}}>Логін</div>
+            <input value={l} onChange={e=>setL(e.target.value)} placeholder="yulia" style={{background:"transparent",border:"none",fontSize:16,color:"#fff",width:"100%"}}/>
+          </div>
+          <div style={{padding:"14px 18px",position:"relative"}}>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:4}}>Пароль</div>
+            <input type={show?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="••••••••" style={{background:"transparent",border:"none",fontSize:16,color:"#fff",width:"calc(100% - 36px)"}}/>
+            <button onClick={()=>setShow(s=>!s)} style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"rgba(255,255,255,0.3)",fontSize:18,cursor:"pointer"}}>{show?"🙈":"👁"}</button>
+          </div>
+        </div>
+        {error&&<div style={{background:"rgba(255,59,48,0.15)",border:"1px solid rgba(255,59,48,0.3)",borderRadius:12,padding:"12px 16px",marginBottom:12,fontSize:14,color:"#FF6B60",textAlign:"center"}}>{error}</div>}
+        <button onClick={go} style={{width:"100%",padding:16,background:"#007AFF",border:"none",borderRadius:16,fontSize:17,fontWeight:700,color:"#fff",cursor:"pointer",boxShadow:"0 4px 20px rgba(0,122,255,0.4)"}}>Увійти</button>
+      </div>
+      <p style={{color:"rgba(255,255,255,0.25)",fontSize:13,marginTop:28,textAlign:"center"}}>
+        Записатися на урок?{" "}
+        <a href="#register" style={{color:"rgba(255,255,255,0.5)",fontWeight:600}}>Форма →</a>
+      </p>
+    </div>
+  );
+};
+
+// ── МІНІ КАЛЕНДАР ─────────────────────────────────────────
+const MiniCal=({lessons,onDay,sel})=>{
+  const now=new Date();
+  const[yr,setYr]=useState(now.getFullYear());
+  const[mo,setMo]=useState(now.getMonth());
+  const t=today();
+  const dim=new Date(yr,mo+1,0).getDate();
+  const fd=(()=>{const d=new Date(yr,mo,1).getDay();return d===0?6:d-1;})();
+  const mk=(d)=>`${yr}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const lFor=(ds)=>lessons.filter(l=>l.date===ds);
+  const prev=()=>{if(mo===0){setYr(y=>y-1);setMo(11);}else setMo(m=>m-1);};
+  const next=()=>{if(mo===11){setYr(y=>y+1);setMo(0);}else setMo(m=>m+1);};
+  return(
+    <div className="card" style={{margin:"0 16px 20px",boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 18px 10px"}}>
+        <button onClick={prev} style={{background:iOS.fill3,border:"none",width:30,height:30,borderRadius:8,cursor:"pointer",color:iOS.blue,fontSize:18,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+        <span style={{fontSize:16,fontWeight:700,color:iOS.label,letterSpacing:"-0.3px"}}>{MONTHS[mo]} {yr}</span>
+        <button onClick={next} style={{background:iOS.fill3,border:"none",width:30,height:30,borderRadius:8,cursor:"pointer",color:iOS.blue,fontSize:18,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"0 10px 6px"}}>
+        {WD.map(d=><div key={d} style={{textAlign:"center",fontSize:11,color:iOS.label3,fontWeight:600,letterSpacing:"0.02em",padding:"2px 0"}}>{d}</div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,padding:"0 8px 12px"}}>
+        {Array(fd).fill(null).map((_,i)=><div key={"e"+i}/>)}
+        {Array(dim).fill(null).map((_,i)=>{
+          const day=i+1,ds=mk(day);
+          const dl=lFor(ds).filter(l=>l.status!=="cancelled");
+          const isT=ds===t,isSel=ds===sel;
+          const dotColor=(l)=>({planned:iOS.orange,completed:iOS.green}[l.status]||iOS.orange);
+          const shownDots=dl.slice(0,5);
+          return(
+            <div key={day} onClick={()=>onDay?.(ds)} style={{height:46,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:10,cursor:"pointer",gap:2,background:isSel?iOS.blue:isT?iOS.blueT:"transparent",transition:"background 0.15s"}}>
+              <span style={{fontSize:14,fontWeight:isSel||isT?700:400,color:isSel?"#fff":isT?iOS.blue:iOS.label,lineHeight:1}}>{day}</span>
+              {dl.length>0&&<div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center",maxWidth:28}}>
+                {shownDots.map((l,i)=><div key={i} style={{width:4,height:4,borderRadius:"50%",background:isSel?"rgba(255,255,255,0.8)":dotColor(l)}}/>)}
+                {dl.length>5&&<div style={{width:4,height:4,borderRadius:"50%",background:isSel?"rgba(255,255,255,0.5)":iOS.label3}}/>}
+              </div>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:16,padding:"8px 18px 14px",borderTop:`0.5px solid ${iOS.sepNT}`}}>
+        {[{c:iOS.orange,l:"Заплановано"},{c:iOS.green,l:"Проведено"}].map(x=>(
+          <div key={x.l} style={{display:"flex",alignItems:"center",gap:5}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:x.c}}/>
+            <span style={{fontSize:12,color:iOS.label2}}>{x.l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── SHEETS ────────────────────────────────────────────────
+const LessonSheet=({lesson,students,onClose,onSave,onDelete,isNew,defaultDate})=>{
+  const defSt=students[0]?.id||"";
+  const def=lesson||{studentId:defSt,date:defaultDate||today(),time:"10:00",status:"planned",paid:false};
+  const[l,setL]=useState({...def,amount:lesson?.amount||(students.find(s=>s.id===def.studentId)?.lessonCost||0)});
+  const set=(k,v)=>setL(p=>({...p,[k]:v}));
+  const setSt=(v)=>{const st=students.find(s=>s.id===v);setL(p=>({...p,studentId:v,amount:st?.lessonCost||p.amount}));};
+  return(
+    <Sheet title={isNew?"Нове заняття":"Заняття"} onClose={onClose}>
+      <Section>
+        <IField label="Учень" value={l.studentId} onChange={setSt} options={students.map(s=>({v:s.id,l:s.name}))}/>
+        <IField label="Дата" type="date" value={l.date} onChange={v=>set("date",v)}/>
+        <IField label="Час" type="time" value={l.time} onChange={v=>set("time",v)}/>
+        <IField label="Вартість (₴)" type="number" value={l.amount} onChange={v=>set("amount",Number(v))}/>
+        <IField label="Статус" value={l.status} onChange={v=>set("status",v)} options={[{v:"planned",l:"Заплановано"},{v:"completed",l:"Проведено"},{v:"cancelled",l:"Скасовано"}]}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px"}}>
+          <span style={{fontSize:16,color:iOS.label}}>Оплачено</span>
+          <div onClick={()=>set("paid",!l.paid)} style={{width:50,height:30,borderRadius:15,background:l.paid?iOS.green:iOS.fill,transition:"background 0.2s",cursor:"pointer",position:"relative",flexShrink:0}}>
+            <div style={{position:"absolute",top:3,left:l.paid?23:3,width:24,height:24,borderRadius:"50%",background:"#fff",boxShadow:"0 2px 6px rgba(0,0,0,0.2)",transition:"left 0.2s"}}/>
+          </div>
+        </div>
+      </Section>
+      <div style={{padding:"0 16px",display:"flex",flexDirection:"column",gap:10}}>
+        <IBtn full onClick={()=>onSave(isNew?{...l,id:uid()}:l)}>{isNew?"Додати заняття":"Зберегти"}</IBtn>
+        {!isNew&&<IBtn full v="destructive" onClick={()=>onDelete(l.id)}>Видалити</IBtn>}
+      </div>
+    </Sheet>
+  );
+};
+
+// Дні тижня для графіку
+const DAYS_UK=["Пн","Вт","Ср","Чт","Пт","Сб","Нд"];
+const DAYS_FULL=["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"];
+
+// Понеділок поточного тижня
+const weekMon=()=>{const d=new Date();const dow=d.getDay();const diff=dow===0?-6:1-dow;d.setDate(d.getDate()+diff);d.setHours(0,0,0,0);return d;};
+
+// Генерація уроків за тижневим графіком
+const generateLessonsByRange=(student,schedule,fromDate,toDate,existingLessons)=>{
+  const newLessons=[];
+  const from=new Date(fromDate+"T00:00:00");
+  const to=new Date(toDate+"T00:00:00");
+  // Починаємо з понеділка тижня який містить fromDate
+  const start=new Date(from);
+  const dow=start.getDay();
+  const diff=dow===0?-6:1-dow;
+  start.setDate(start.getDate()+diff);
+  const cur=new Date(start);
+  while(cur<=to){
+    for(const slot of schedule){
+      const d=new Date(cur);
+      d.setDate(d.getDate()+slot.day);
+      if(d<from||d>to)continue;
+      const dateStr=d.toISOString().split("T")[0];
+      const exists=existingLessons.some(l=>l.studentId===student.id&&l.date===dateStr&&l.time===slot.time);
+      if(!exists){
+        newLessons.push({id:uid(),studentId:student.id,date:dateStr,time:slot.time,status:"planned",paid:false,amount:student.lessonCost});
+      }
+    }
+    cur.setDate(cur.getDate()+7);
+  }
+  return newLessons;
+};
+
+const StudentSheet=({student,onClose,onSave,onDelete})=>{
+  const isNew=!student;
+  const[d,setD]=useState(student||{name:"",phone:"",lessonCost:500,balance:0,notes:"",tgChatId:"",status:"active",schedule:[]});
+  const set=(k,v)=>setD(p=>({...p,[k]:v}));
+  return(
+    <Sheet title={isNew?"Новий учень":"Редагувати учня"} onClose={onClose}>
+      <Section>
+        <IField label="ПІБ учня" value={d.name} onChange={v=>set("name",v)} placeholder="Іванченко Олена"/>
+        <IField label="Телефон" value={d.phone} onChange={v=>set("phone",v)} placeholder="+38 050 000 00 00"/>
+        <IField label="Вартість уроку (₴)" type="number" value={d.lessonCost} onChange={v=>set("lessonCost",Number(v))}/>
+        {!isNew&&<IField label="Баланс (₴)" type="number" value={d.balance} onChange={v=>set("balance",Number(v))}/>}
+        <IField label="Статус" value={d.status||"active"} onChange={v=>set("status",v)} options={[{v:"active",l:"Активний"},{v:"finished",l:"Завершив навчання"}]}/>
+        <IField label="Telegram Chat ID" value={d.tgChatId||""} onChange={v=>set("tgChatId",v)} placeholder="123456789"/>
+        <IField label="Нотатки" value={d.notes||""} onChange={v=>set("notes",v)} rows={2} placeholder="Клас, цілі..."/>
+      </Section>
+      <div style={{padding:"0 16px",display:"flex",flexDirection:"column",gap:10}}>
+        <IBtn full onClick={()=>d.name&&onSave(isNew?{...d,id:uid()}:d)}>{isNew?"Додати учня":"Зберегти"}</IBtn>
+        {!isNew&&<IBtn full v="destructive" onClick={()=>onDelete(d.id)}>Видалити учня</IBtn>}
+      </div>
+    </Sheet>
+  );
+};
+
+const MoveSheet=({lesson,onClose,onMove})=>{
+  const[date,setDate]=useState(lesson.date);
+  const[time,setTime]=useState(lesson.time);
+  return(
+    <Sheet title="Перенести заняття" onClose={onClose}>
+      <Section footer="Статус та оплата залишаються без змін.">
+        <IField label="Нова дата" type="date" value={date} onChange={setDate}/>
+        <IField label="Новий час" type="time" value={time} onChange={setTime}/>
+      </Section>
+      <div style={{padding:"0 16px"}}>
+        <IBtn full v="tinted" color={iOS.orange} onClick={()=>onMove({...lesson,date,time})}>Перенести</IBtn>
+      </div>
+    </Sheet>
+  );
+};
+
+// ── HOME ─────────────────────────────────────────────────
+const Home=({students,lessons,payments,onLogout})=>{
+  const t=today();
+  const todayL=[...lessons].filter(l=>l.date===t).sort((a,b)=>a.time.localeCompare(b.time));
+  const mo=thisMo();
+  const moL=lessons.filter(l=>l.date.startsWith(mo));
+  const planned=moL.filter(l=>l.status!=="cancelled").reduce((s,l)=>s+l.amount,0);
+  const actual=moL.filter(l=>l.status==="completed").reduce((s,l)=>s+l.amount,0);
+  const received=payments.filter(p=>p.date.startsWith(mo)).reduce((s,p)=>s+p.amount,0);
+  const now=new Date();
+  const days=["неділя","понеділок","вівторок","середа","четвер","п'ятниця","субота"];
+  const getSt=(id)=>students.find(s=>s.id===id);
+  const debtors=students.filter(s=>s.balance<0&&s.status!=="finished");
+  return(
+    <div>
+      <div style={{padding:"60px 20px 4px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div>
+          <p style={{fontSize:13,color:iOS.label2,marginBottom:2}}>{days[now.getDay()]}, {now.getDate()} {MONTHS_GEN[now.getMonth()]}</p>
+          <h1 style={{fontSize:34,fontWeight:800,color:iOS.label,letterSpacing:"-0.8px"}}>Привіт, Юліє 👋</h1>
+        </div>
+        <button onClick={onLogout} style={{background:iOS.fill,border:"none",borderRadius:20,padding:"7px 14px",fontSize:14,color:iOS.label2,cursor:"pointer",fontWeight:500}}>Вийти</button>
+      </div>
+      <div style={{margin:"12px 16px 8px",borderRadius:22,overflow:"hidden",background:"linear-gradient(140deg,#007AFF 0%,#0055D4 100%)",boxShadow:"0 8px 30px rgba(0,122,255,0.35)"}}>
+        <div style={{padding:"20px 22px"}}>
+          <p style={{color:"rgba(255,255,255,0.6)",fontSize:13,fontWeight:500,marginBottom:6,textTransform:"uppercase"}}>Сьогодні</p>
+          <p style={{color:"#fff",fontSize:26,fontWeight:800,letterSpacing:"-0.5px",marginBottom:todayL.length?16:0}}>{todayL.length?`${todayL.length} заняття`:"Вільний день 🌿"}</p>
+          {todayL.map(l=>{
+            const st=getSt(l.studentId);
+            return(
+              <div key={l.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.15)",borderRadius:14,padding:"10px 14px",marginBottom:8}}>
+                <div style={{background:"rgba(255,255,255,0.2)",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:14,flexShrink:0}}>{l.time}</div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fff",fontWeight:600,fontSize:15}}>{st?.name}</div>
+                  <div style={{fontSize:12,color:"rgba(255,255,255,0.65)",marginTop:1}}>{l.status==="completed"?"✓ Проведено":l.status==="cancelled"?"Скасовано":"Заплановано"}</div>
+                </div>
+                <div style={{color:"rgba(255,255,255,0.85)",fontWeight:700,fontSize:14}}>{fmtM(l.amount)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"8px 16px"}}>
+        {[{l:"Плановий дохід",v:planned,c:iOS.orange,mo:`${moL.filter(l=>l.status!=="cancelled").length} занять`},{l:"Фактичний дохід",v:actual,c:iOS.green,mo:`${moL.filter(l=>l.status==="completed").length} проведено`}].map(x=>(
+          <div key={x.l} className="card" style={{padding:16}}>
+            <p style={{fontSize:12,color:iOS.label2,marginBottom:6}}>{x.l}</p>
+            <p style={{fontSize:22,fontWeight:800,color:x.c,letterSpacing:"-0.5px",marginBottom:2}}>{fmtM(x.v)}</p>
+            <p style={{fontSize:12,color:iOS.label3}}>{x.mo}</p>
+          </div>
+        ))}
+      </div>
+      <Section title="Прогрес місяця">
+        <div style={{padding:"16px 18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+            <span style={{fontSize:14,color:iOS.label2}}>{MONTHS[now.getMonth()]}</span>
+            <span style={{fontSize:14,color:iOS.green,fontWeight:600}}>{planned>0?Math.round(actual/planned*100):0}%</span>
+          </div>
+          <div style={{height:6,background:iOS.fill3,borderRadius:6,overflow:"hidden",marginBottom:10}}>
+            <div style={{height:"100%",width:`${planned>0?Math.min(100,Math.round(actual/planned*100)):0}%`,background:iOS.green,borderRadius:6,transition:"width 0.6s ease"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontSize:13,color:iOS.label3}}>Отримано: {fmtM(received)}</span>
+            <span style={{fontSize:13,color:iOS.label2}}>з {fmtM(planned)}</span>
+          </div>
+        </div>
+      </Section>
+      {debtors.length>0&&(
+        <Section title="Заборгованість">
+          {debtors.map((s,i)=><Row key={s.id} label={s.name} right={fmtM(Math.abs(s.balance))} rightColor={iOS.red} last={i===debtors.length-1}/>)}
+        </Section>
+      )}
+      <div style={{height:20}}/>
+    </div>
+  );
+};
+
+// ── КАБІНЕТ ───────────────────────────────────────────────
+const Cabinet=({students,lessons,payments,onAdd,onUpdate,onDelete,onCancel,onGoToStudent})=>{
+  const[sel,setSel]=useState(today());
+  const[tab,setTab]=useState("cal"); // cal | week
+  const[lSheet,setLSheet]=useState(null);
+  const[mSheet,setMSheet]=useState(null);
+  const[weekOffset,setWeekOffset]=useState(0); // 0=поточний, -1=минулий, +1=наступний
+  const t=today();
+  const active=students.filter(s=>s.status!=="finished");
+  const getSt=(id)=>students.find(s=>s.id===id);
+  const selL=lessons.filter(l=>l.date===sel).sort((a,b)=>a.time.localeCompare(b.time));
+
+  // Тижневий вигляд з offset
+  const mon=weekMon();
+  const weekDays=Array(7).fill(null).map((_,i)=>{
+    const d=new Date(mon);
+    d.setDate(d.getDate()+weekOffset*7+i);
+    return d.toISOString().split("T")[0];
+  });
+
+  // Унікальні часи що є в уроках цього тижня + стандартні
+  const weekLessons=lessons.filter(l=>weekDays.includes(l.date)&&l.status!=="cancelled");
+  const allTimes=[...new Set([...weekLessons.map(l=>l.time),"09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00"])].sort();
+
+  const LessonCard=({l})=>{
+    const st=getSt(l.studentId);
+    const done=l.status==="completed",cancelled=l.status==="cancelled",planned=l.status==="planned";
+    const borderColor={planned:iOS.orange,completed:iOS.green,cancelled:iOS.red}[l.status]||iOS.orange;
+    return(
+      <div className="card" style={{marginBottom:10,borderLeft:`3px solid ${borderColor}`,opacity:cancelled?0.6:1}}>
+        <div style={{padding:"14px 16px 10px"}}>
+          {/* Заголовок */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{background:iOS.blueT,color:iOS.blue,fontSize:14,fontWeight:700,padding:"3px 10px",borderRadius:8,textDecoration:cancelled?"line-through":"none"}}>{l.time}</span>
+              <span
+                onClick={e=>{e.stopPropagation();if(!cancelled&&onGoToStudent&&st)onGoToStudent(st.id);}}
+                style={{fontSize:16,fontWeight:700,color:cancelled?iOS.label3:iOS.blue,textDecoration:cancelled?"line-through":"none",cursor:cancelled?"default":"pointer",borderBottom:cancelled?"none":`1px solid ${iOS.blue}40`}}
+              >{st?.name}</span>
+            </div>
+            <span style={{fontSize:15,fontWeight:700,color:cancelled?iOS.label3:iOS.label}}>{fmtM(l.amount)}</span>
+          </div>
+          {/* Статуси */}
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+            <LBadge status={l.status}/>
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:l.paid?iOS.greenT:iOS.fill3,color:l.paid?iOS.green:iOS.label3,fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20}}>
+              {l.paid?"✓ Оплачено":"Не оплачено"}
+            </span>
+            {cancelled&&<span style={{fontSize:11,color:iOS.red,fontWeight:600}}>⛔ Скасовано</span>}
+          </div>
+          {/* Кнопки дій */}
+          {!cancelled&&(
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {planned&&<button onClick={()=>onUpdate({...l,status:"completed"})} style={{background:iOS.greenT,color:iOS.green,border:"none",borderRadius:10,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✓ Проведено</button>}
+              <button onClick={()=>setLSheet(l)} style={{background:iOS.fill3,color:iOS.label2,border:"none",borderRadius:10,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Редагувати</button>
+              <button onClick={()=>setMSheet(l)} style={{background:iOS.fill3,color:iOS.label2,border:"none",borderRadius:10,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>📅 Перенести</button>
+              <button onClick={()=>onCancel(l.id)} style={{background:iOS.redT,color:iOS.red,border:"none",borderRadius:10,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>⛔ Скасувати</button>
+            </div>
+          )}
+          {cancelled&&(
+            <button onClick={()=>onUpdate({...l,status:"planned"})} style={{background:iOS.fill3,color:iOS.label2,border:"none",borderRadius:10,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>↩ Відновити</button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Кольори для учнів у тижневому вигляді
+  const stColors=["#007AFF","#34C759","#FF9500","#AF52DE","#FF3B30","#30B0C7","#5856D6","#FF2D55"];
+  const stColorMap={};
+  active.forEach((s,i)=>{stColorMap[s.id]=stColors[i%stColors.length];});
+
+  return(
+    <div>
+      <div style={{padding:"60px 20px 4px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <h1 style={{fontSize:34,fontWeight:800,color:iOS.label,letterSpacing:"-0.8px"}}>Кабінет</h1>
+        <button onClick={()=>setLSheet("new")} style={{background:iOS.blueT,color:iOS.blue,border:"none",borderRadius:20,padding:"7px 16px",fontSize:15,fontWeight:600,cursor:"pointer"}}>+ Урок</button>
+      </div>
+
+      {/* Перемикач вигляду */}
+      <div style={{margin:"12px 16px 0",background:iOS.fill3,borderRadius:12,padding:3,display:"flex",gap:2}}>
+        {[{v:"cal",l:"📅 Календар"},{v:"week",l:"📋 Тиждень"}].map(t2=>(
+          <button key={t2.v} onClick={()=>setTab(t2.v)} style={{flex:1,padding:"8px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:14,background:tab===t2.v?"#fff":"transparent",color:tab===t2.v?iOS.label:iOS.label2,boxShadow:tab===t2.v?"0 1px 6px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
+            {t2.l}
+          </button>
+        ))}
+      </div>
+
+      {tab==="cal"&&(
+        <>
+          <MiniCal lessons={lessons} onDay={setSel} sel={sel}/>
+          <div style={{padding:"0 20px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <span style={{fontSize:18,fontWeight:700,color:iOS.label,letterSpacing:"-0.3px"}}>{fmtFull(sel)}</span>
+              {sel===t&&<span style={{marginLeft:8,fontSize:12,background:iOS.blueT,color:iOS.blue,padding:"3px 8px",borderRadius:10,fontWeight:600}}>Сьогодні</span>}
+            </div>
+            <button onClick={()=>setLSheet("new")} style={{background:iOS.orangeT,color:iOS.orange,border:"none",borderRadius:14,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ тут</button>
+          </div>
+          {selL.length===0?(
+            <div style={{textAlign:"center",padding:"48px 20px",color:iOS.label3}}>
+              <div style={{fontSize:48,marginBottom:12}}>📅</div>
+              <p style={{fontSize:16,fontWeight:600,color:iOS.label2,marginBottom:4}}>Занять немає</p>
+              <p style={{fontSize:14,color:iOS.label3}}>Оберіть іншу дату або додайте урок</p>
+            </div>
+          ):(
+            <div style={{margin:"0 16px"}}>{selL.map(l=><LessonCard key={l.id} l={l}/>)}</div>
+          )}
+        </>
+      )}
+
+      {tab==="week"&&(
+        <div style={{padding:"12px 0 0"}}>
+          {/* Заголовок тижня */}
+          {/* Навігація по тижнях */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 16px 12px"}}>
+            <button onClick={()=>setWeekOffset(o=>o-1)} style={{background:iOS.fill3,border:"none",width:32,height:32,borderRadius:8,cursor:"pointer",color:iOS.blue,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:15,fontWeight:700,color:iOS.label}}>{fmtD(weekDays[0])} — {fmtD(weekDays[6])}</div>
+              <div style={{fontSize:12,color:iOS.label3,marginTop:2}}>
+                {weekOffset===0?"Поточний тиждень":weekOffset<0?`${Math.abs(weekOffset)} тиж. тому`:`+${weekOffset} тиж.`}
+                {" · "}{weekLessons.length} занять
+              </div>
+            </div>
+            <button onClick={()=>setWeekOffset(o=>o+1)} style={{background:iOS.fill3,border:"none",width:32,height:32,borderRadius:8,cursor:"pointer",color:iOS.blue,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+          </div>
+          {weekOffset!==0&&(
+            <div style={{textAlign:"center",paddingBottom:8}}>
+              <button onClick={()=>setWeekOffset(0)} style={{background:iOS.blueT,color:iOS.blue,border:"none",borderRadius:20,padding:"4px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Повернутись до поточного</button>
+            </div>
+          )}
+
+          {/* Легенда учнів */}
+          <div style={{padding:"0 16px 12px",display:"flex",flexWrap:"wrap",gap:8}}>
+            {active.filter(s=>(s.schedule||[]).length>0).map(s=>(
+              <div key={s.id} style={{display:"flex",alignItems:"center",gap:5,background:"#fff",borderRadius:20,padding:"4px 10px",border:`1.5px solid ${stColorMap[s.id]}30`}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:stColorMap[s.id]}}/>
+                <span style={{fontSize:12,fontWeight:600,color:iOS.label}}>{s.name.split(" ")[0]}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Сітка тижня */}
+          <div style={{overflowX:"auto",paddingBottom:8}}>
+            <div style={{minWidth:520}}>
+              {/* Заголовки днів */}
+              <div style={{display:"grid",gridTemplateColumns:"50px repeat(7,1fr)",gap:2,padding:"0 16px 6px"}}>
+                <div/>
+                {weekDays.map((ds,i)=>{
+                  const isT=ds===t;
+                  const dLessons=lessons.filter(l=>l.date===ds&&l.status!=="cancelled");
+                  return(
+                    <div key={ds} onClick={()=>{setSel(ds);setTab("cal");}}
+                      style={{textAlign:"center",padding:"6px 4px",borderRadius:10,cursor:"pointer",background:isT?iOS.blueT:"transparent"}}>
+                      <div style={{fontSize:11,color:isT?iOS.blue:iOS.label3,fontWeight:600}}>{["Пн","Вт","Ср","Чт","Пт","Сб","Нд"][i]}</div>
+                      <div style={{fontSize:16,fontWeight:isT?700:400,color:isT?iOS.blue:iOS.label}}>{new Date(ds+"T00:00:00").getDate()}</div>
+                      {dLessons.length>0&&<div style={{width:6,height:6,borderRadius:"50%",background:isT?iOS.blue:iOS.orange,margin:"2px auto 0"}}/>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Часові слоти */}
+              {allTimes.map(time=>{
+                const rowLessons=weekDays.map(ds=>lessons.find(l=>l.date===ds&&l.time===time&&l.status!=="cancelled")||null);
+                const hasAny=rowLessons.some(Boolean);
+                if(!hasAny){
+                  // Показуємо порожній рядок тільки якщо час стандартний
+                  const isStd=["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"].includes(time);
+                  if(!isStd)return null;
+                }
+                return(
+                  <div key={time} style={{display:"grid",gridTemplateColumns:"50px repeat(7,1fr)",gap:2,padding:"0 16px",marginBottom:3}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8}}>
+                      <span style={{fontSize:11,color:iOS.label3,fontWeight:500}}>{time}</span>
+                    </div>
+                    {rowLessons.map((l,i)=>{
+                      const ds=weekDays[i];
+                      const isT=ds===t;
+                      if(l){
+                        const st=getSt(l.studentId);
+                        const color=stColorMap[l.studentId]||iOS.blue;
+                        return(
+                          <div key={i} onClick={()=>{setSel(ds);setTab("cal");}}
+                            style={{background:color+"18",border:`1.5px solid ${color}40`,borderRadius:8,padding:"4px 6px",cursor:"pointer",minHeight:36,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                            <div style={{fontSize:10,fontWeight:700,color,lineHeight:1.2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{st?.name?.split(" ")[0]||"?"}</div>
+                            {l.status==="completed"&&<div style={{fontSize:9,color:iOS.green,fontWeight:600}}>✓</div>}
+                          </div>
+                        );
+                      }
+                      return(
+                        <div key={i} onClick={()=>{setSel(ds);setLSheet("new");}}
+                          style={{borderRadius:8,minHeight:36,background:isT?"rgba(0,122,255,0.03)":"rgba(118,118,128,0.05)",border:`1px dashed ${isT?"rgba(0,122,255,0.2)":"rgba(118,118,128,0.15)"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <span style={{fontSize:16,color:"rgba(118,118,128,0.3)"}}>+</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{padding:"12px 16px",fontSize:12,color:iOS.label3,textAlign:"center"}}>
+            Натисніть на учня → перейдете до дня · Натисніть + → додасте урок
+          </div>
+        </div>
+      )}
+
+      <div style={{height:20}}/>
+      {lSheet==="new"&&<LessonSheet students={active} isNew defaultDate={sel} onClose={()=>setLSheet(null)} onSave={d=>{onAdd(d);setLSheet(null);}} onDelete={()=>{}}/>}
+      {lSheet&&lSheet!=="new"&&<LessonSheet lesson={lSheet} students={students} onClose={()=>setLSheet(null)} onSave={d=>{onUpdate(d);setLSheet(null);}} onDelete={id=>{onDelete(id);setLSheet(null);}}/>}
+      {mSheet&&<MoveSheet lesson={mSheet} onClose={()=>setMSheet(null)} onMove={d=>{onUpdate(d);setMSheet(null);setSel(d.date);}}/>}
+    </div>
+  );
+};
+
+// ── PAYMENT LOGIC HELPERS ─────────────────────────────────
+
+const recalcPaid=(studentId,lessons,payments,students)=>{
+  const student=students.find(s=>s.id===studentId);
+  if(!student)return lessons;
+  const cost=student.lessonCost||1;
+  const totalPaid=payments.filter(p=>p.studentId===studentId).reduce((s,p)=>s+p.amount,0);
+  const paidCount=Math.floor(totalPaid/cost);
+  const studentLessons=[...lessons]
+    .filter(l=>l.studentId===studentId&&l.status!=="cancelled")
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const paidIds=new Set(studentLessons.slice(0,paidCount).map(l=>l.id));
+  return lessons.map(l=>{
+    if(l.studentId!==studentId)return l;
+    if(l.status==="cancelled")return{...l,paid:false};
+    return{...l,paid:paidIds.has(l.id)};
+  });
+};
+
+// ── SCHEDULE SECTION COMPONENT ───────────────────────────
+const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
+  const[schedule,setSchedule]=useState(student.schedule||[]);
+  const[newDay,setNewDay]=useState("0");
+  const[newTime,setNewTime]=useState("10:00");
+  const[fromDate,setFromDate]=useState(today());
+  const[toDate,setToDate]=useState(()=>{
+    const d=new Date();d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];
+  });
+  const[genBusy,setGenBusy]=useState(false);
+  const[genResult,setGenResult]=useState(null); // null | number
+  const[saved,setSaved]=useState(false);
+  const DAYS=["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"];
+
+  // Sync if student prop changes
+  useState(()=>{setSchedule(student.schedule||[]);});
+
+  const getConflict=(day,time)=>{
+    if(!allLessons)return null;
+    const mon=weekMon();
+    const checkDate=new Date(mon);
+    checkDate.setDate(checkDate.getDate()+Number(day));
+    const dateStr=checkDate.toISOString().split("T")[0];
+    return allLessons.find(l=>l.date===dateStr&&l.time===time&&l.studentId!==student.id&&l.status!=="cancelled");
+  };
+
+  const addSlot=()=>{
+    const day=Number(newDay);
+    if(schedule.some(s=>s.day===day&&s.time===newTime))return;
+    const ns=[...schedule,{day,time:newTime}];
+    setSchedule(ns);
+    setSaved(false);setGenResult(null);
+  };
+  const removeSlot=(day,time)=>{
+    setSchedule(schedule.filter(s=>!(s.day===day&&s.time===time)));
+    setSaved(false);setGenResult(null);
+  };
+  const saveSchedule=async()=>{
+    await onUpdateSchedule({...student,schedule});
+    setSaved(true);
+    setTimeout(()=>setSaved(false),3000);
+  };
+
+  return(
+    <Section title="📅 Щотижневий графік">
+      {/* Поточні слоти */}
+      {schedule.length===0&&(
+        <div style={{padding:"14px 16px",fontSize:14,color:iOS.label3}}>
+          Графік не встановлено. Додайте день і час нижче.
+        </div>
+      )}
+      {[...schedule].sort((a,b)=>a.day-b.day||a.time.localeCompare(b.time)).map((s,i)=>{
+        const conflict=getConflict(s.day,s.time);
+        return(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+            <div>
+              <span style={{fontSize:15,fontWeight:600,color:iOS.label}}>{DAYS[s.day]}</span>
+              <span style={{fontSize:15,fontWeight:700,color:iOS.blue,marginLeft:12}}>{s.time}</span>
+              {conflict&&<div style={{fontSize:11,color:iOS.red,marginTop:2}}>⚠ Зайнято іншим учнем цього тижня</div>}
+            </div>
+            <button onClick={()=>removeSlot(s.day,s.time)}
+              style={{background:"rgba(255,59,48,0.1)",color:"#FF3B30",border:"none",borderRadius:8,padding:"5px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✕</button>
+          </div>
+        );
+      })}
+
+      {/* Додати слот */}
+      <div style={{padding:"12px 16px",display:"flex",gap:8,alignItems:"center",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+        <select value={newDay} onChange={e=>setNewDay(e.target.value)}
+          style={{flex:1,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label,appearance:"none"}}>
+          {DAYS.map((d,i)=><option key={i} value={i}>{d}</option>)}
+        </select>
+        <input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}
+          style={{width:95,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+        <button onClick={addSlot}
+          style={{background:"rgba(0,122,255,0.1)",color:"#007AFF",border:"none",borderRadius:10,padding:"9px 14px",fontSize:16,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+      </div>
+
+      {/* Зберегти графік */}
+      <div style={{padding:"10px 16px 4px",display:"flex",alignItems:"center",gap:10}}>
+        <IBtn sm v="tinted" color={iOS.blue} onClick={saveSchedule}>Зберегти графік</IBtn>
+        {saved&&<span style={{fontSize:13,color:iOS.green,fontWeight:600}}>✓ Збережено!</span>}
+      </div>
+
+      {/* Генерація по датах */}
+      {schedule.length>0&&(
+        <div style={{padding:"12px 16px 16px",borderTop:"0.5px solid rgba(60,60,67,0.12)",marginTop:6}}>
+          <div style={{fontSize:13,fontWeight:600,color:iOS.label2,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.03em"}}>Згенерувати уроки</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div>
+              <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>Від</div>
+              <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}
+                style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>До</div>
+              <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}
+                style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+            </div>
+          </div>
+          {genResult===null?(
+            <IBtn sm v="tinted" color={iOS.indigo} disabled={genBusy||!fromDate||!toDate} onClick={async()=>{
+              setGenBusy(true);
+              const newL=generateLessonsByRange(student,schedule,fromDate,toDate,allLessons);
+              if(newL.length>0)await onSave(newL);
+              setGenResult(newL.length);
+              setGenBusy(false);
+            }}>{genBusy?"Генерація...":"📅 Згенерувати уроки"}</IBtn>
+          ):(
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <p style={{fontSize:14,color:genResult>0?iOS.green:iOS.label2,fontWeight:600}}>
+                {genResult>0?`✓ Додано ${genResult} уроків!`:"Всі уроки вже існують"}
+              </p>
+              <button onClick={()=>setGenResult(null)} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,color:iOS.label2,cursor:"pointer"}}>Ще раз</button>
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+};
+
+const StudentProfile=({student,lessons,allLessons,onEdit,onBack,onGenerate,onUpdateSchedule})=>{
+  const[sel,setSel]=useState(today());
+  const[tgMsg,setTgMsg]=useState("");
+  const[tgSt,setTgSt]=useState("");
+  const[busy,setBusy]=useState(false);
+
+  const sl=lessons.filter(l=>l.studentId===student.id);
+  const selL=sl.filter(l=>l.date===sel).sort((a,b)=>a.time.localeCompare(b.time));
+  const done=sl.filter(l=>l.status==="completed").length;
+  const initials=student.name.split(" ").map(n=>n[0]).join("").slice(0,2);
+  const send=async()=>{
+    setBusy(true);
+    const r=await tgSend(student.tgChatId,tgMsg);
+    setTgSt(r.ok?"✓ Надіслано!":"❌ "+r.error);
+    if(r.ok)setTgMsg("");
+    setBusy(false);
+    setTimeout(()=>setTgSt(""),4000);
+  };
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"60px 20px 10px"}}>
+        <button onClick={onBack} style={{background:"none",border:"none",color:iOS.blue,fontSize:16,fontWeight:600,cursor:"pointer"}}>‹ Назад</button>
+        <button onClick={onEdit} style={{background:"none",border:"none",color:iOS.blue,fontSize:16,fontWeight:600,cursor:"pointer"}}>Редагувати</button>
+      </div>
+      <div style={{textAlign:"center",padding:"8px 20px 24px"}}>
+        <div style={{width:80,height:80,borderRadius:26,background:student.status==="finished"?iOS.purpleT:iOS.blueT,display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:12}}>
+          <span style={{fontSize:28,fontWeight:800,color:student.status==="finished"?iOS.purple:iOS.blue}}>{initials}</span>
+        </div>
+        <h2 style={{fontSize:24,fontWeight:800,color:iOS.label,letterSpacing:"-0.5px",marginBottom:4}}>{student.name}</h2>
+        <p style={{fontSize:15,color:iOS.label2}}>{student.phone}</p>
+        <div style={{marginTop:8}}><SBadge status={student.status}/></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"0 16px 8px"}}>
+        {[{l:"Вартість уроку",v:fmtM(student.lessonCost),c:iOS.blue},{l:"Баланс",v:fmtM(student.balance),c:student.balance<0?iOS.red:student.balance>0?iOS.green:iOS.label2},{l:"Проведено",v:done,c:iOS.green},{l:"Всього",v:sl.length,c:iOS.label}].map(x=>(
+          <div key={x.l} className="card" style={{padding:14,textAlign:"center"}}>
+            <p style={{fontSize:11,color:iOS.label3,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{x.l}</p>
+            <p style={{fontSize:22,fontWeight:800,color:x.c,letterSpacing:"-0.5px"}}>{x.v}</p>
+          </div>
+        ))}
+      </div>
+      {student.notes&&<Section><div style={{padding:"14px 16px"}}><p style={{fontSize:14,color:iOS.label2,lineHeight:1.6}}>{student.notes}</p></div></Section>}
+
+      {/* ── ЩОТИЖНЕВИЙ ГРАФІК (завжди показуємо) ── */}
+      <ScheduleSection student={student} allLessons={allLessons} onSave={onGenerate} onUpdateSchedule={onUpdateSchedule||((s)=>{})}/>
+      <Section title="Telegram">
+        {!student.tgChatId?(
+          <div style={{padding:"14px 16px"}}><p style={{fontSize:14,color:iOS.label2,lineHeight:1.6}}>Chat ID не вказано. Перейдіть у Telegram → Знайти Chat ID.</p></div>
+        ):(
+          <>
+            <div style={{padding:"10px 16px 0",display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={()=>setTgMsg("🔔 Нагадування про заняття завтра!")} style={{background:iOS.blueT,color:iOS.blue,border:"none",borderRadius:10,padding:"7px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Нагадування</button>
+              <button onClick={()=>setTgMsg(`💰 Нагадування про оплату. Баланс: ${fmtM(student.balance)}`)} style={{background:iOS.orangeT,color:iOS.orange,border:"none",borderRadius:10,padding:"7px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Оплата</button>
+            </div>
+            <IField value={tgMsg} onChange={setTgMsg} rows={3} placeholder="Текст повідомлення..."/>
+            <div style={{padding:"10px 16px 14px",display:"flex",gap:10,alignItems:"center"}}>
+              <IBtn sm v="tinted" color={iOS.teal} disabled={!tgMsg||busy} onClick={send}>Надіслати ✈️</IBtn>
+              {tgSt&&<span style={{fontSize:13,color:tgSt.startsWith("❌")?iOS.red:iOS.green,fontWeight:600}}>{tgSt}</span>}
+            </div>
+          </>
+        )}
+      </Section>
+      <div style={{padding:"4px 20px 8px"}}><h3 style={{fontSize:20,fontWeight:700,color:iOS.label,letterSpacing:"-0.3px"}}>Розклад</h3></div>
+      <MiniCal lessons={sl} onDay={setSel} sel={sel}/>
+      {selL.length>0&&(
+        <Section>
+          {selL.map((l,i)=>(
+            <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<selL.length-1?`0.5px solid ${iOS.sepNT}`:"none"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{background:iOS.blueT,color:iOS.blue,fontSize:13,fontWeight:700,padding:"2px 9px",borderRadius:7}}>{l.time}</span>
+                <LBadge status={l.status}/>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                {l.paid&&<span style={{fontSize:12,color:iOS.green,fontWeight:700}}>✓</span>}
+                <span style={{fontSize:14,fontWeight:700,color:iOS.label}}>{fmtM(l.amount)}</span>
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
+      <Section title={`Всі заняття · ${sl.length}`}>
+        {sl.length===0&&<div style={{padding:"14px 16px",color:iOS.label3,fontSize:14}}>Занять ще немає</div>}
+        {[...sl].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).map((l,i,arr)=>{
+          const cancelled=l.status==="cancelled";
+          const statusColor={planned:iOS.orange,completed:iOS.green,cancelled:iOS.red}[l.status]||iOS.orange;
+          return(
+            <div key={l.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 16px",borderBottom:i<arr.length-1?"0.5px solid rgba(60,60,67,0.12)":"none",opacity:cancelled?0.55:1,background:cancelled?"rgba(255,59,48,0.03)":"transparent"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:14,color:cancelled?iOS.label3:iOS.label,textDecoration:cancelled?"line-through":"none",fontWeight:500}}>{fmtD(l.date)} · {l.time}</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:11,fontWeight:600,color:statusColor}}>{l.status==="completed"?"✓ Проведено":l.status==="cancelled"?"⛔ Скасовано":"Заплановано"}</span>
+                <span style={{fontSize:11,fontWeight:600,color:l.paid?iOS.green:iOS.label3}}>· {l.paid?"💳 Сплачено":"Не сплачено"}</span>
+              </div>
+            </div>
+          );
+        })}
+      </Section>
+      <div style={{height:20}}/>
+    </div>
+  );
+};
+
+// ── УЧНІ ─────────────────────────────────────────────────
+const Students=({students,lessons,requests,onAdd,onAddMany,onUpdate,onDelete,onUpdateRequest,onAddFromRequest})=>{
+  const[sheet,setSheet]=useState(null);
+  const[viewId,setViewId]=useState(null);
+  const[tab,setTab]=useState("active");
+
+  // Глобальний хендлер для переходу з кабінету
+  useEffect(()=>{
+    window.__goToStudent=(id)=>{
+      setViewId(id);
+      setTab("active");
+    };
+    return()=>{delete window.__goToStudent;};
+  },[]);
+  const viewSt=viewId?students.find(s=>s.id===viewId):null;
+  const active=students.filter(s=>s.status!=="finished");
+  const finished=students.filter(s=>s.status==="finished");
+  const newReq=(requests||[]).filter(r=>r.status==="new");
+  if(viewSt)return(
+    <>
+      <StudentProfile student={viewSt} lessons={lessons} allLessons={lessons} onBack={()=>setViewId(null)} onEdit={()=>setSheet(viewSt)} onGenerate={newL=>onAddMany(newL)} onUpdateSchedule={s=>onUpdate(s)}/>
+      {sheet&&sheet!=="new"&&<StudentSheet student={sheet} onClose={()=>setSheet(null)} onSave={s=>{onUpdate(s);setSheet(null);}} onDelete={id=>{onDelete(id);setViewId(null);setSheet(null);}}/>}
+    </>
+  );
+  // Також рендеримо sheet для редагування зі списку (без переходу в профіль)
+  return(
+    <div>
+      <div style={{padding:"60px 20px 4px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <h1 style={{fontSize:34,fontWeight:800,color:iOS.label,letterSpacing:"-0.8px"}}>Учні</h1>
+        <button onClick={()=>setSheet("new")} style={{background:iOS.blueT,color:iOS.blue,border:"none",borderRadius:20,padding:"7px 16px",fontSize:15,fontWeight:600,cursor:"pointer"}}>+ Учень</button>
+      </div>
+      <div style={{margin:"12px 16px",background:iOS.fill3,borderRadius:12,padding:3,display:"flex",gap:2}}>
+        {[{v:"active",l:`Активні · ${active.length}`},{v:"finished",l:`Завершили · ${finished.length}`},{v:"requests",l:`Запити · ${newReq.length}`}].map(t2=>(
+          <button key={t2.v} onClick={()=>setTab(t2.v)} style={{flex:1,padding:"8px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:tab===t2.v?"#fff":"transparent",color:tab===t2.v?iOS.label:iOS.label2,boxShadow:tab===t2.v?"0 1px 6px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
+            {t2.l}
+          </button>
+        ))}
+      </div>
+      {tab==="active"&&(
+        <Section>
+          {active.length===0&&<div style={{padding:"24px 16px",textAlign:"center",color:iOS.label3,fontSize:14}}>Немає активних учнів</div>}
+          {active.map((s,i)=>{
+            const cnt=lessons.filter(l=>l.studentId===s.id&&l.status==="completed").length;
+            const hasSched=(s.schedule||[]).length>0;
+            return(
+              <div key={s.id} style={{display:"flex",alignItems:"center",borderBottom:i===active.length-1?"none":"0.5px solid rgba(60,60,67,0.12)",background:"#fff"}}>
+                <div onClick={()=>setViewId(s.id)} style={{flex:1,display:"flex",alignItems:"center",gap:12,padding:"12px 0 12px 16px",cursor:"pointer",minWidth:0}}>
+                  <div style={{width:34,height:34,borderRadius:8,background:iOS.blueT,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{s.name[0]}</div>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:16,color:iOS.label}}>{s.name}</div>
+                    <div style={{fontSize:13,color:iOS.label2,marginTop:1}}>
+                      {s.phone} · {cnt} занять
+                      {hasSched&&<span style={{color:iOS.blue}}> · 📅{(s.schedule||[]).length}</span>}
+                      {!s.tgChatId&&<span style={{color:iOS.orange}}> · ⚠TG</span>}
+                    </div>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:4,paddingRight:12}}>
+                  <span style={{fontSize:14,fontWeight:600,color:s.balance<0?iOS.red:iOS.label2}}>{fmtM(s.lessonCost)}</span>
+                  <button onClick={e=>{e.stopPropagation();setSheet(s);}} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:iOS.blue,cursor:"pointer",marginLeft:6}}>Ред.</button>
+                </div>
+              </div>
+            );
+          })}
+        </Section>
+      )}
+      {tab==="finished"&&(
+        <Section>
+          {finished.length===0&&<div style={{padding:"24px 16px",textAlign:"center",color:iOS.label3,fontSize:14}}>Немає</div>}
+          {finished.map((s,i)=>(
+            <div key={s.id} style={{display:"flex",alignItems:"center",borderBottom:i===finished.length-1?"none":"0.5px solid rgba(60,60,67,0.12)",background:"#fff"}}>
+              <div onClick={()=>setViewId(s.id)} style={{flex:1,display:"flex",alignItems:"center",gap:12,padding:"12px 0 12px 16px",cursor:"pointer"}}>
+                <div style={{width:34,height:34,borderRadius:8,background:iOS.purpleT,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{s.name[0]}</div>
+                <div>
+                  <div style={{fontSize:16,color:iOS.label}}>{s.name}</div>
+                  <div style={{fontSize:13,color:iOS.label2,marginTop:1}}>{lessons.filter(l=>l.studentId===s.id&&l.status==="completed").length} занять · Завершив</div>
+                </div>
+              </div>
+              <button onClick={e=>{e.stopPropagation();setSheet(s);}} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,color:iOS.purple,cursor:"pointer",marginRight:12}}>Ред.</button>
+            </div>
+          ))}
+        </Section>
+      )}
+      {tab==="requests"&&(
+        <>
+          {newReq.length===0&&<div style={{textAlign:"center",padding:"48px 20px",color:iOS.label3}}><div style={{fontSize:40,marginBottom:10}}>📭</div><p style={{fontSize:15,fontWeight:600,color:iOS.label2}}>Нових запитів немає</p></div>}
+          {newReq.map(r=>(
+            <div key={r.id} style={{margin:"0 16px 10px"}} className="card">
+              <div style={{padding:"14px 16px 10px",borderBottom:`0.5px solid ${iOS.sepNT}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontSize:16,fontWeight:700,color:iOS.label}}>{r.name}</span>
+                  <Chip label="Новий запит" color={iOS.purple}/>
+                </div>
+                <p style={{fontSize:14,color:iOS.label2,marginBottom:3}}>{r.phone}</p>
+                {r.time&&<p style={{fontSize:13,color:iOS.label3}}>⏰ {r.time}</p>}
+                {r.notes&&<p style={{fontSize:13,color:iOS.label3,marginTop:2}}>📝 {r.notes}</p>}
+                <p style={{fontSize:11,color:iOS.label3,marginTop:4}}>{fmtD(r.date)}</p>
+              </div>
+              <div style={{display:"flex",padding:"10px 16px",gap:8}}>
+                <button onClick={()=>onAddFromRequest(r)} style={{flex:1,background:iOS.blueT,color:iOS.blue,border:"none",borderRadius:10,padding:"10px",fontSize:14,fontWeight:600,cursor:"pointer"}}>+ Додати до учнів</button>
+                <button onClick={()=>onUpdateRequest({...r,status:"declined"})} style={{background:iOS.fill3,color:iOS.label2,border:"none",borderRadius:10,padding:"10px 16px",fontSize:14,fontWeight:600,cursor:"pointer"}}>Відхилити</button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+      <div style={{height:20}}/>
+      {sheet==="new"&&<StudentSheet onClose={()=>setSheet(null)} onSave={s=>{onAdd(s);setSheet(null);}} onDelete={()=>{}}/>}
+      {sheet&&sheet!=="new"&&!viewSt&&<StudentSheet student={sheet} onClose={()=>setSheet(null)} onSave={s=>{onUpdate(s);setSheet(null);}} onDelete={id=>{onDelete(id);setSheet(null);}}/>}
+    </div>
+  );
+};
+
+// ── ФІНАНСИ ───────────────────────────────────────────────
+const Finance=({students,lessons,payments,onAddPayment,onUpdatePayment,onDeletePayment})=>{
+  const[paySheet,setPaySheet]=useState(false);
+  const[editSheet,setEditSheet]=useState(null);
+  const[vm,setVm]=useState(thisMo());
+  const getSt=(id)=>students.find(s=>s.id===id);
+  const chM=(d)=>{const[y,m]=vm.split("-").map(Number);let ny=y,nm=m+d;if(nm>12){ny++;nm=1;}if(nm<1){ny--;nm=12;}setVm(`${ny}-${String(nm).padStart(2,"0")}`);};
+  const[vy,vm2]=vm.split("-").map(Number);
+  const moL=lessons.filter(l=>l.date.startsWith(vm));
+  const moP=payments.filter(p=>p.date.startsWith(vm));
+  const planned=moL.filter(l=>l.status!=="cancelled").reduce((s,l)=>s+l.amount,0);
+  const actual=moL.filter(l=>l.status==="completed").reduce((s,l)=>s+l.amount,0);
+  const received=moP.reduce((s,p)=>s+p.amount,0);
+  const perSt=students.map(s=>{
+    const ml=moL.filter(l=>l.studentId===s.id);
+    const mp=moP.filter(p=>p.studentId===s.id);
+    return{s,done:ml.filter(l=>l.status==="completed").length,total:ml.filter(l=>l.status!=="cancelled").length,earned:ml.filter(l=>l.status==="completed").reduce((a,l)=>a+l.amount,0),paid:mp.reduce((a,p)=>a+p.amount,0)};
+  }).filter(x=>x.total>0||x.paid>0);
+
+  const PaySheet=()=>{
+    const[sId,setSId]=useState(students[0]?.id||"");
+    const[amt,setAmt]=useState("");
+    const[date,setDate]=useState(today());
+    const[note,setNote]=useState("");
+    return(
+      <Sheet title="Внести оплату" onClose={()=>setPaySheet(false)}>
+        <Section>
+          <IField label="Учень" value={sId} onChange={setSId} options={students.map(s=>({v:s.id,l:s.name}))}/>
+          <IField label="Сума (₴)" type="number" value={amt} onChange={setAmt} placeholder="500"/>
+          <IField label="Дата" type="date" value={date} onChange={setDate}/>
+          <IField label="Примітка" value={note} onChange={setNote} placeholder="За 2 уроки"/>
+        </Section>
+        <div style={{padding:"0 16px"}}>
+          <IBtn full v="tinted" color={iOS.green} onClick={()=>{if(!amt)return;onAddPayment({id:uid(),studentId:sId,amount:Number(amt),date,note});setPaySheet(false);}}>Додати оплату</IBtn>
+        </div>
+      </Sheet>
+    );
+  };
+
+  const EditSheet=({payment})=>{
+    const[sId,setSId]=useState(payment.studentId);
+    const[amt,setAmt]=useState(String(payment.amount));
+    const[date,setDate]=useState(payment.date);
+    const[note,setNote]=useState(payment.note||"");
+    return(
+      <Sheet title="Редагувати оплату" onClose={()=>setEditSheet(null)}>
+        <Section>
+          <IField label="Учень" value={sId} onChange={setSId} options={students.map(s=>({v:s.id,l:s.name}))}/>
+          <IField label="Сума (₴)" type="number" value={amt} onChange={setAmt} placeholder="500"/>
+          <IField label="Дата" type="date" value={date} onChange={setDate}/>
+          <IField label="Примітка" value={note} onChange={setNote} placeholder="За 2 уроки"/>
+        </Section>
+        <div style={{padding:"0 16px",display:"flex",flexDirection:"column",gap:10}}>
+          <IBtn full v="tinted" color={iOS.blue} onClick={()=>{if(!amt)return;onUpdatePayment({...payment,studentId:sId,amount:Number(amt),date,note});setEditSheet(null);}}>Зберегти</IBtn>
+          <IBtn full v="destructive" onClick={()=>{onDeletePayment(payment.id);setEditSheet(null);}}>Видалити платіж</IBtn>
+        </div>
+      </Sheet>
+    );
+  };
+
+  return(
+    <div>
+      <div style={{padding:"60px 20px 4px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <h1 style={{fontSize:34,fontWeight:800,color:iOS.label,letterSpacing:"-0.8px"}}>Фінанси</h1>
+        <button onClick={()=>setPaySheet(true)} style={{background:iOS.greenT,color:iOS.green,border:"none",borderRadius:20,padding:"7px 16px",fontSize:15,fontWeight:600,cursor:"pointer"}}>+ Оплата</button>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"12px 16px",background:"#fff",borderRadius:16,padding:"12px 16px"}}>
+        <button onClick={()=>chM(-1)} style={{background:iOS.fill3,border:"none",width:32,height:32,borderRadius:8,cursor:"pointer",color:iOS.blue,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+        <span style={{fontSize:17,fontWeight:700,color:iOS.label,letterSpacing:"-0.3px"}}>{MONTHS[vm2-1]} {vy}</span>
+        <button onClick={()=>chM(1)} style={{background:iOS.fill3,border:"none",width:32,height:32,borderRadius:8,cursor:"pointer",color:iOS.blue,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"0 16px 8px"}}>
+        {[{l:"Планово",v:planned,c:iOS.blue},{l:"Зароблено",v:actual,c:iOS.green},{l:"Отримано",v:received,c:iOS.orange},{l:"Різниця",v:received-actual,c:received>=actual?iOS.green:iOS.red}].map(x=>(
+          <div key={x.l} className="card" style={{padding:14}}>
+            <p style={{fontSize:11,color:iOS.label3,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{x.l}</p>
+            <p style={{fontSize:20,fontWeight:800,color:x.c,letterSpacing:"-0.5px"}}>{fmtM(x.v)}</p>
+          </div>
+        ))}
+      </div>
+      {perSt.length>0&&(
+        <Section title="По учнях">
+          {perSt.map((x,i)=>(
+            <div key={x.s.id} style={{padding:"12px 16px",borderBottom:i<perSt.length-1?`0.5px solid ${iOS.sepNT}`:"none"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                <span style={{fontSize:15,fontWeight:600,color:iOS.label}}>{x.s.name}</span>
+                <span style={{fontSize:15,fontWeight:700,color:iOS.green}}>{fmtM(x.earned)}</span>
+              </div>
+              <div style={{height:4,background:iOS.fill3,borderRadius:4,overflow:"hidden",marginBottom:6}}>
+                <div style={{height:"100%",width:`${x.total>0?Math.min(100,Math.round(x.done/x.total*100)):0}%`,background:iOS.green,borderRadius:4}}/>
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:iOS.label3}}>{x.done}/{x.total} занять</span>
+                <span style={{fontSize:12,color:iOS.orange,fontWeight:600}}>Сплачено: {fmtM(x.paid)}</span>
+                {x.earned!==x.paid&&<span style={{fontSize:12,color:x.earned>x.paid?iOS.orange:iOS.green,fontWeight:600}}>{x.earned>x.paid?`Борг: ${fmtM(x.earned-x.paid)}`:`Аванс: ${fmtM(x.paid-x.earned)}`}</span>}
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
+      <Section title="Платежі" footer="Натисніть на платіж щоб редагувати або видалити">
+        {moP.length===0&&<div style={{padding:"14px 16px",color:iOS.label3,fontSize:14}}>Платежів немає</div>}
+        {[...moP].reverse().map((p,i)=>{
+          const st=getSt(p.studentId);
+          return(
+            <div key={p.id} onClick={()=>setEditSheet(p)} className="press" style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderBottom:i<moP.length-1?`0.5px solid ${iOS.sepNT}`:"none",cursor:"pointer"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:16,color:iOS.label,fontWeight:500}}>{st?.name||"?"}</div>
+                <div style={{fontSize:13,color:iOS.label3,marginTop:2}}>{fmtD(p.date)}{p.note?` · ${p.note}`:""}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:15,fontWeight:700,color:iOS.green}}>+{fmtM(p.amount)}</span>
+                <span style={{color:iOS.label3,fontSize:18}}>›</span>
+              </div>
+            </div>
+          );
+        })}
+      </Section>
+      <div style={{height:20}}/>
+      {paySheet&&<PaySheet/>}
+      {editSheet&&<EditSheet payment={editSheet}/>}
+    </div>
+  );
+};
+
+// ── TELEGRAM ──────────────────────────────────────────────
+const Telegram=({students,lessons,teacherChatId,onSaveTeacherChatId,onUpdateStudent})=>{
+  const[msg,setMsg]=useState("");
+  const[sId,setSId]=useState(students[0]?.id||"");
+  const[tgSt,setTgSt]=useState("");
+  const[busy,setBusy]=useState(false);
+  const[botUsers,setBotUsers]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[botErr,setBotErr]=useState("");
+  const[assignSheet,setAssignSheet]=useState(null);
+  const[tcId,setTcId]=useState(teacherChatId||"");
+  const show=(s)=>{setTgSt(s);setTimeout(()=>setTgSt(""),4000);};
+  const fetch2=async()=>{
+    setLoading(true);setBotErr("");
+    try{
+      const r=await fetch(`${TG_API}/getUpdates?limit=100`);
+      const d=await r.json();
+      if(!d.ok){setBotErr("Помилка: "+d.description);setLoading(false);return;}
+      const seen=new Map();
+      (d.result||[]).forEach(u=>{const chat=u.message?.chat||u.callback_query?.message?.chat;if(chat?.id)seen.set(String(chat.id),{chatId:String(chat.id),name:[chat.first_name,chat.last_name].filter(Boolean).join(" ")||"Невідомий",username:chat.username||""});});
+      const list=[...seen.values()];
+      setBotUsers(list);
+      if(!list.length)setBotErr("Ніхто ще не писав боту. Напишіть /start на t.me/yulia_school_bot");
+    }catch{setBotErr("Не вдалось з'єднатись.");}
+    setLoading(false);
+  };
+  const tmrwL=lessons.filter(l=>l.date===off(1)&&l.status==="planned");
+  const selSt=students.find(s=>s.id===sId);
+  return(
+    <div>
+      <div style={{padding:"60px 20px 12px"}}><h1 style={{fontSize:34,fontWeight:800,color:iOS.label,letterSpacing:"-0.8px"}}>Telegram ✈️</h1></div>
+      <Section title="Мій Chat ID">
+        <div style={{padding:"14px 16px",borderBottom:`0.5px solid ${iOS.sepNT}`}}>
+          <p style={{fontSize:13,color:iOS.label2,marginBottom:10,lineHeight:1.5}}>Для сповіщень про нові заявки. Напишіть /start боту і натисніть «Оновити».</p>
+          <div style={{display:"flex",gap:8}}>
+            <input value={tcId} onChange={e=>setTcId(e.target.value)} placeholder="123456789" style={{flex:1,padding:"10px 12px",background:iOS.fill4,border:`1px solid ${iOS.sepNT}`,borderRadius:10,fontSize:15,color:iOS.label}}/>
+            <IBtn sm v="tinted" onClick={()=>{onSaveTeacherChatId(tcId);show("✓ Збережено!");}}>Зберегти</IBtn>
+          </div>
+          {teacherChatId&&<p style={{fontSize:12,color:iOS.green,marginTop:6,fontWeight:600}}>✓ ID: {teacherChatId}</p>}
+          {tgSt==="✓ Збережено!"&&<p style={{fontSize:12,color:iOS.green,marginTop:6,fontWeight:600}}>{tgSt}</p>}
+        </div>
+      </Section>
+      <Section title="Chat ID учнів">
+        <div style={{padding:"14px 16px",borderBottom:`0.5px solid ${iOS.sepNT}`}}>
+          <p style={{fontSize:13,color:iOS.label2,marginBottom:10,lineHeight:1.5}}>Учень пише /start на <strong>t.me/yulia_school_bot</strong> → натисніть «Оновити»</p>
+          <IBtn sm v="tinted" color={iOS.teal} disabled={loading} onClick={fetch2}>{loading?"⏳...":"🔍 Оновити список"}</IBtn>
+        </div>
+        {botErr&&<div style={{padding:"12px 16px",fontSize:13,color:iOS.red}}>{botErr}</div>}
+        {!botUsers&&!botErr&&<div style={{padding:"12px 16px",fontSize:13,color:iOS.label3}}>Натисніть «Оновити»</div>}
+        {botUsers?.map((u,i)=>{
+          const already=students.find(s=>s.tgChatId===u.chatId);
+          return(
+            <div key={u.chatId} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<botUsers.length-1?`0.5px solid ${iOS.sepNT}`:"none"}}>
+              <div>
+                <p style={{fontSize:15,fontWeight:600,color:iOS.label}}>{u.name}</p>
+                <p style={{fontSize:12,color:iOS.label3}}>{u.username&&`@${u.username} · `}ID: {u.chatId}{already&&<span style={{color:iOS.green,fontWeight:600}}> · ✓ {already.name}</span>}</p>
+              </div>
+              {!already&&<IBtn sm v="tinted" color={iOS.teal} onClick={()=>setAssignSheet(u)}>Призначити</IBtn>}
+            </div>
+          );
+        })}
+      </Section>
+      <Section title={`Нагадування на завтра · ${tmrwL.length}`}>
+        {!tmrwL.length&&<div style={{padding:"14px 16px",fontSize:13,color:iOS.label3}}>Занять на завтра немає</div>}
+        {tmrwL.map((l,i)=>{
+          const st=students.find(s=>s.id===l.studentId);
+          const txt=`🔔 <b>Нагадування</b>\n\nЗавтра о ${l.time} — урок з Юлією Лук'янчук.\n📚 Українська мова 🇺🇦`;
+          return(
+            <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<tmrwL.length-1?`0.5px solid ${iOS.sepNT}`:"none"}}>
+              <div>
+                <p style={{fontSize:15,fontWeight:600,color:iOS.label}}>{st?.name} · {l.time}</p>
+                {!st?.tgChatId&&<p style={{fontSize:12,color:iOS.orange,marginTop:2}}>⚠ Chat ID не вказано</p>}
+              </div>
+              <IBtn sm v="tinted" color={iOS.teal} disabled={!st?.tgChatId||busy} onClick={async()=>{setBusy(true);const r=await tgSend(st.tgChatId,txt);show(r.ok?"✓ Надіслано!":"❌ "+r.error);setBusy(false);}}>Надіслати</IBtn>
+            </div>
+          );
+        })}
+      </Section>
+      <Section title="Персональне повідомлення">
+        <IField label="Учень" value={sId} onChange={setSId} options={students.map(s=>({v:s.id,l:s.name+(s.tgChatId?"":" ⚠")}))}/>
+        {!selSt?.tgChatId&&<div style={{padding:"0 16px 8px",fontSize:13,color:iOS.orange}}>⚠ Chat ID не вказано</div>}
+        <IField value={msg} onChange={setMsg} rows={4} placeholder="Текст повідомлення..."/>
+        <div style={{padding:"8px 16px 14px",display:"flex",gap:10,alignItems:"center"}}>
+          <IBtn sm v="tinted" color={iOS.teal} disabled={!msg||!selSt?.tgChatId||busy} onClick={async()=>{setBusy(true);const r=await tgSend(selSt.tgChatId,msg);show(r.ok?"✓ Надіслано!":"❌ "+r.error);if(r.ok)setMsg("");setBusy(false);}}>Надіслати ✈️</IBtn>
+          {tgSt&&tgSt!=="✓ Збережено!"&&<span style={{fontSize:13,color:tgSt.startsWith("❌")?iOS.red:iOS.green,fontWeight:600}}>{tgSt}</span>}
+        </div>
+      </Section>
+      <div style={{height:20}}/>
+      {assignSheet&&(
+        <Sheet title="Призначити учню" onClose={()=>setAssignSheet(null)}>
+          <Section footer="Або це ваш Chat ID?">
+            {students.filter(s=>!s.tgChatId).length===0&&<div style={{padding:"14px 16px",color:iOS.label3,fontSize:14}}>Всі учні мають Chat ID</div>}
+            {students.filter(s=>!s.tgChatId).map((s,i,arr)=>(
+              <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<arr.length-1?`0.5px solid ${iOS.sepNT}`:"none"}}>
+                <div><p style={{fontSize:15,fontWeight:600,color:iOS.label}}>{s.name}</p><p style={{fontSize:12,color:iOS.label3}}>{s.phone}</p></div>
+                <IBtn sm onClick={()=>{onUpdateStudent({...s,tgChatId:assignSheet.chatId});setAssignSheet(null);}}>Призначити</IBtn>
+              </div>
+            ))}
+          </Section>
+          <div style={{padding:"0 16px"}}>
+            <IBtn full v="gray" onClick={()=>{onSaveTeacherChatId(assignSheet.chatId);setTcId(assignSheet.chatId);setAssignSheet(null);show("✓ Збережено!");}}>Це мій Chat ID (вчитель)</IBtn>
+          </div>
+        </Sheet>
+      )}
+    </div>
+  );
+};
+
+// ── ЗАПИС НА УРОК ─────────────────────────────────────────
+const Register=({onAdd,isPublic})=>{
+  const[f,setF]=useState({name:"",phone:"",time:"",notes:""});
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const[done,setDone]=useState(false);
+  const[saving,setSaving]=useState(false);
+
+  const handleSubmit=async()=>{
+    if(!f.name||!f.phone||saving)return;
+    setSaving(true);
+    try{
+      await onAdd({...f,id:uid(),date:today(),status:"new"});
+      setDone(true);
+      setF({name:"",phone:"",time:"",notes:""});
+    }catch(e){console.error(e);}
+    setSaving(false);
+  };
+
+  if(done)return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#000",padding:24}}>
+      <div style={{textAlign:"center",maxWidth:320}}>
+        <div style={{fontSize:64,marginBottom:18}}>🎉</div>
+        <h2 style={{fontSize:24,color:"#fff",fontWeight:800,letterSpacing:"-0.5px",marginBottom:10}}>Заявку надіслано!</h2>
+        <p style={{color:"rgba(255,255,255,0.5)",fontSize:15,lineHeight:1.7}}>Юлія Лук'янчук зв'яжеться з вами найближчим часом.</p>
+        {!isPublic&&<div style={{marginTop:24}}><IBtn onClick={()=>setDone(false)}>Нова заявка</IBtn></div>}
+      </div>
+    </div>
+  );
+
+  if(isPublic)return(
+    <div style={{minHeight:"100vh",background:"#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:76,height:76,borderRadius:24,background:"rgba(255,255,255,0.1)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.15)",display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:16}}>
+            <span style={{color:"#fff",fontWeight:800,fontSize:24}}>ЮЛ</span>
+          </div>
+          <h1 style={{color:"#fff",fontSize:26,fontWeight:800,letterSpacing:"-0.5px",marginBottom:6}}>Школа Юлії Лук'янчук</h1>
+          <p style={{color:"rgba(255,255,255,0.4)",fontSize:14,lineHeight:1.6}}>Українська мова · Підготовка до НМТ, ДПА 🇺🇦</p>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.07)",backdropFilter:"blur(30px)",borderRadius:24,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginBottom:12}}>
+          {[{l:"Ваше ім'я *",k:"name",ph:"Іванченко Олена Іванівна"},{l:"Телефон *",k:"phone",ph:"+38 050 000 00 00"},{l:"Зручний час",k:"time",ph:"Вечір будніх, субота..."},{l:"Клас / ціль навчання",k:"notes",ph:"10 клас, НМТ...",rows:2}].map((field,i,arr)=>(
+            <div key={field.k} style={{padding:"14px 18px",borderBottom:i<arr.length-1?"0.5px solid rgba(255,255,255,0.08)":"none"}}>
+              <div style={{fontSize:12,color:"rgba(255,255,255,0.35)",marginBottom:5}}>{field.l}</div>
+              {field.rows
+                ?<textarea value={f[field.k]} onChange={e=>set(field.k,e.target.value)} rows={field.rows} placeholder={field.ph} style={{width:"100%",background:"transparent",border:"none",fontSize:16,color:"#fff",resize:"none"}}/>
+                :<input value={f[field.k]} onChange={e=>set(field.k,e.target.value)} placeholder={field.ph} style={{width:"100%",background:"transparent",border:"none",fontSize:16,color:"#fff"}}/>
+              }
+            </div>
+          ))}
+        </div>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.3)",marginBottom:16,textAlign:"center",lineHeight:1.5}}>Пробний урок — безкоштовно!</p>
+        <button onClick={handleSubmit} disabled={!f.name||!f.phone||saving}
+          style={{width:"100%",padding:16,background:f.name&&f.phone&&!saving?"#007AFF":"rgba(255,255,255,0.1)",border:"none",borderRadius:16,fontSize:17,fontWeight:700,color:f.name&&f.phone&&!saving?"#fff":"rgba(255,255,255,0.3)",cursor:f.name&&f.phone&&!saving?"pointer":"default",transition:"all 0.2s"}}>
+          {saving?"Зберігаємо...":"Записатися на пробний урок →"}
+        </button>
+        <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.2)",marginTop:20}}>© Школа Юлії Лук'янчук</p>
+      </div>
+    </div>
+  );
+
+  return(
+    <div>
+      <div style={{padding:"60px 20px 12px"}}>
+        <h1 style={{fontSize:34,fontWeight:800,color:iOS.label,letterSpacing:"-0.8px",marginBottom:4}}>Пробний урок</h1>
+        <p style={{fontSize:14,color:iOS.label2}}>Школа Юлії Лук'янчук · Українська мова · НМТ, ДПА 🇺🇦</p>
+      </div>
+      <Section>
+        <IField label="Ваше ім'я *" value={f.name} onChange={v=>set("name",v)} placeholder="Іванченко Олена Іванівна"/>
+        <IField label="Телефон *" value={f.phone} onChange={v=>set("phone",v)} placeholder="+38 050 000 00 00"/>
+        <IField label="Зручний час" value={f.time} onChange={v=>set("time",v)} placeholder="Вечір будніх, субота..."/>
+        <IField label="Клас / ціль" value={f.notes} onChange={v=>set("notes",v)} rows={3} placeholder="10 клас, НМТ..."/>
+      </Section>
+      <div style={{margin:"0 16px 12px"}}>
+        <IBtn full disabled={!f.name||!f.phone||saving} onClick={handleSubmit}>{saving?"Зберігаємо...":"Записатися →"}</IBtn>
+      </div>
+    </div>
+  );
+};
+
+// ── APP ───────────────────────────────────────────────────
+const NAV=[
+  {id:"home",emoji:"🏠",l:"Головна"},
+  {id:"cabinet",emoji:"📅",l:"Кабінет"},
+  {id:"students",emoji:"👥",l:"Учні"},
+  {id:"finance",emoji:"₴",l:"Фінанси"},
+  {id:"telegram",emoji:"✈️",l:"Telegram"},
+  {id:"register",emoji:"📝",l:"Запис"},
+];
+
+function App(){
+  const[page,setPage]=useState("home");
+  const[data,setData]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[authed,setAuthed]=useState(()=>sessionStorage.getItem("auth")==="1");
+  const isPublic=window.location.hash==="#register"||window.location.search.includes("register");
+
+  // ── Firebase: лише один слухач, без fbLoad ──
+  // Використовуємо тільки fbListen щоб уникнути race condition
+  useEffect(()=>{
+    let initialized=false;
+    const unsub=fbListen(d=>{
+      // Перевірка що дані не порожні (захист від випадкового очищення)
+      const hasData=d&&(
+        (Array.isArray(d.students)&&d.students.length>0)||
+        (Array.isArray(d.lessons)&&d.lessons.length>0)||
+        (Array.isArray(d.payments)&&d.payments.length>0)||
+        (Array.isArray(d.requests)&&d.requests.length>0)
+      );
+      setData(prev=>{
+        // Якщо у нас вже є дані і нові порожні — НЕ оновлюємо (захист від очищення)
+        if(prev&&hasData===false&&initialized){
+          console.warn("fbListen: received empty data, keeping previous");
+          return prev;
+        }
+        return{
+          students:Array.isArray(d.students)?d.students:[],
+          lessons: Array.isArray(d.lessons) ?d.lessons :[],
+          payments:Array.isArray(d.payments)?d.payments:[],
+          requests:Array.isArray(d.requests)?d.requests:[],
+          teacherChatId:d.teacherChatId||"",
+        };
+      });
+      setLoading(false);
+      initialized=true;
+    });
+
+    // Якщо через 5 секунд даних немає — документ не існує, створюємо порожній
+    const timer=setTimeout(async()=>{
+      if(!initialized){
+        const existing=await fbLoad();
+        if(!existing){
+          const empty=EMPTY();
+          await fbSave(empty);
+          setData(empty);
+        }
+        setLoading(false);
+        initialized=true;
+      }
+    },5000);
+
+    return()=>{unsub();clearTimeout(timer);};
+  },[]);
+
+  // ── Зберегти в Firebase (setData одразу для UI, потім Firebase) ──
+  const save=useCallback((nd)=>{
+    // Захист: не зберігаємо якщо nd пустий або не об'єкт
+    if(!nd||typeof nd!=='object')return;
+    const safe={
+      students:Array.isArray(nd.students)?nd.students:[],
+      lessons: Array.isArray(nd.lessons) ?nd.lessons :[],
+      payments:Array.isArray(nd.payments)?nd.payments:[],
+      requests:Array.isArray(nd.requests)?nd.requests:[],
+      teacherChatId:nd.teacherChatId||"",
+    };
+    setData(safe);
+    fbSave(safe);
+  },[]);
+
+  if(loading)return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F2F2F7",gap:16}}>
+      <div style={{width:50,height:50,borderRadius:16,background:"linear-gradient(135deg,#007AFF,#0055D4)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <span style={{color:"#fff",fontWeight:800,fontSize:16}}>ЮЛ</span>
+      </div>
+      <p style={{color:"rgba(60,60,67,0.4)",fontSize:14}}>Завантаження...</p>
+    </div>
+  );
+
+  // ── Публічна сторінка запису ──
+  if(isPublic){
+    const go=async r=>{
+      try{
+        // Читаємо СВІЖІ дані з Firebase щоб не затерти існуючі
+        const current=await fbLoad()||EMPTY();
+        const safe={
+          students:Array.isArray(current.students)?current.students:[],
+          lessons: Array.isArray(current.lessons) ?current.lessons :[],
+          payments:Array.isArray(current.payments)?current.payments:[],
+          requests:[...(Array.isArray(current.requests)?current.requests:[]),r],
+          teacherChatId:current.teacherChatId||"",
+        };
+        const ok=await fbSave(safe);
+        if(ok&&current.teacherChatId){
+          await tgSend(current.teacherChatId,`📬 <b>Нова заявка на пробний урок!</b>\n\n👤 ${r.name}\n📞 ${r.phone}${r.time?`\n⏰ ${r.time}`:""}${r.notes?`\n📝 ${r.notes}`:""}\n\n⏰ ${new Date().toLocaleString("uk-UA")}`);
+        }
+      }catch(e){console.error("Register save error:",e);}
+    };
+    return<Register isPublic onAdd={go}/>;
+  }
+
+  if(!authed)return<LoginScreen onLogin={()=>setAuthed(true)}/>;
+
+  if(!data)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}>Помилка завантаження</div>;
+
+  const{students=[],lessons=[],payments=[],requests=[],teacherChatId=""}=data;
+
+  const fromReq=r=>{
+    const ns={id:uid(),name:r.name,phone:r.phone,lessonCost:500,balance:0,notes:r.notes||"",tgChatId:"",status:"active"};
+    save({...data,students:[...students,ns],requests:requests.map(x=>x.id===r.id?{...r,status:"converted"}:x)});
+  };
+  const addReq=async r=>{
+    const updated={...data,requests:[...requests,r]};
+    save(updated);
+    if(teacherChatId)await tgSend(teacherChatId,`📬 <b>Нова заявка!</b>\n\n👤 ${r.name}\n📞 ${r.phone}${r.time?`\n⏰ ${r.time}`:""}${r.notes?`\n📝 ${r.notes}`:""}`);
+  };
+
+  const newReqCount=requests.filter(r=>r.status==="new").length;
+
+  const pages={
+    home:<Home students={students} lessons={lessons} payments={payments} onLogout={()=>{sessionStorage.removeItem("auth");setAuthed(false);}}/>,
+    cabinet:<Cabinet students={students} lessons={lessons} payments={payments}
+      onGoToStudent={id=>{setPage("students");setTimeout(()=>window.__goToStudent&&window.__goToStudent(id),50);}}
+      onAdd={l=>{
+        const newLessons=[...lessons,l];
+        const recalced=recalcPaid(l.studentId,newLessons,payments,students);
+        save({...data,lessons:recalced});
+      }}
+      onUpdate={l=>{
+        const newLessons=lessons.map(x=>x.id===l.id?l:x);
+        const recalced=recalcPaid(l.studentId,newLessons,payments,students);
+        save({...data,lessons:recalced});
+      }}
+      onDelete={id=>save({...data,lessons:lessons.filter(x=>x.id!==id)})}
+      onCancel={id=>{
+        const lesson=lessons.find(l=>l.id===id);
+        if(!lesson)return;
+        const cancelled=lessons.map(l=>l.id===id?{...l,status:"cancelled",paid:false}:l);
+        const recalced=recalcPaid(lesson.studentId,cancelled,payments,students);
+        save({...data,lessons:recalced});
+      }}/>,
+    students:<Students students={students} lessons={lessons} requests={requests}
+      onAdd={s=>save({...data,students:[...students,s]})}
+      onAddMany={newL=>save({...data,lessons:[...lessons,...newL]})}
+      onUpdate={s=>save({...data,students:students.map(x=>x.id===s.id?s:x)})}
+      onDelete={id=>save({...data,students:students.filter(x=>x.id!==id)})}
+      onUpdateRequest={r=>save({...data,requests:requests.map(x=>x.id===r.id?r:x)})}
+      onAddFromRequest={fromReq}/>,
+    finance:<Finance students={students} lessons={lessons} payments={payments}
+      onAddPayment={p=>{
+        const nP=[...payments,p];
+        const nS=students.map(s=>s.id===p.studentId?{...s,balance:s.balance+p.amount}:s);
+        const recalced=recalcPaid(p.studentId,lessons,nP,nS);
+        save({...data,payments:nP,students:nS,lessons:recalced});
+      }}
+      onUpdatePayment={p=>{
+        const oldP=payments.find(x=>x.id===p.id);
+        const diff=p.amount-(oldP?.amount||0);
+        const nP=payments.map(x=>x.id===p.id?p:x);
+        const nS=students.map(s=>s.id===p.studentId?{...s,balance:s.balance+diff}:s);
+        const recalced=recalcPaid(p.studentId,lessons,nP,nS);
+        save({...data,payments:nP,students:nS,lessons:recalced});
+      }}
+      onDeletePayment={id=>{
+        const p=payments.find(x=>x.id===id);
+        const nP=payments.filter(x=>x.id!==id);
+        const nS=students.map(s=>s.id===p?.studentId?{...s,balance:s.balance-p.amount}:s);
+        const recalced=recalcPaid(p?.studentId,lessons,nP,nS);
+        save({...data,payments:nP,students:nS,lessons:recalced});
+      }}/>,
+    telegram:<Telegram students={students} lessons={lessons} teacherChatId={teacherChatId}
+      onSaveTeacherChatId={id=>save({...data,teacherChatId:id})}
+      onUpdateStudent={s=>save({...data,students:students.map(x=>x.id===s.id?s:x)})}/>,
+    register:<Register onAdd={addReq}/>,
+  };
+
+  return(
+    <div style={{maxWidth:540,margin:"0 auto",minHeight:"100vh",background:iOS.bg,position:"relative"}}>
+      <div style={{overflowY:"auto",paddingBottom:110}}>{pages[page]}</div>
+
+      {/* iOS Floating Tab Bar */}
+      <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",width:"calc(100% - 32px)",maxWidth:508,background:"rgba(255,255,255,0.72)",backdropFilter:"blur(30px) saturate(200%)",WebkitBackdropFilter:"blur(30px) saturate(200%)",borderRadius:28,border:"0.5px solid rgba(255,255,255,0.8)",boxShadow:"0 8px 40px rgba(0,0,0,0.12)",display:"flex",padding:"6px 8px",zIndex:100}}>
+        {NAV.map(n=>{
+          const active=page===n.id;
+          const hasBadge=n.id==="students"&&newReqCount>0;
+          return(
+            <button key={n.id} onClick={()=>setPage(n.id)} style={{flex:1,padding:"8px 4px 6px",background:active?"rgba(0,122,255,0.1)":"transparent",border:"none",borderRadius:20,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,position:"relative",transition:"background 0.15s",minWidth:0}}>
+              {hasBadge&&<div style={{position:"absolute",top:5,right:"20%",width:8,height:8,borderRadius:"50%",background:iOS.red,border:"1.5px solid rgba(255,255,255,0.8)"}}/>}
+              <span style={{fontSize:18,lineHeight:1,opacity:active?1:0.6}}>{n.emoji}</span>
+              <span style={{fontSize:9,fontWeight:active?700:500,color:active?iOS.blue:iOS.label2,letterSpacing:"0.02em",whiteSpace:"nowrap"}}>{n.l}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
