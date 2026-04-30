@@ -133,8 +133,10 @@ const MONTHS_GEN=["січня","лютого","березня","квітня","�
 const WD=["Пн","Вт","Ср","Чт","Пт","Сб","Нд"];
 
 const uid=()=>`${Date.now().toString(36)}${Math.random().toString(36).substr(2,4)}`;
-const today=()=>new Date().toISOString().split("T")[0];
-const off=(n)=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().split("T")[0];};
+// Форматуємо дату в локальному часовому поясі (без зсуву UTC)
+const localDateStr=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const today=()=>localDateStr(new Date());
+const off=(n)=>{const d=new Date();d.setDate(d.getDate()+n);return localDateStr(d);};
 const fmtD=(s)=>{if(!s)return"";const d=new Date(s+"T00:00:00");return`${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`;};
 const fmtFull=(s)=>{if(!s)return"";const d=new Date(s+"T00:00:00");return`${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;};
 const fmtM=(n)=>`${Number(n||0).toLocaleString("uk-UA")} ₴`;
@@ -346,25 +348,28 @@ const DAYS_UK=["Пн","Вт","Ср","Чт","Пт","Сб","Нд"];
 const DAYS_FULL=["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"];
 
 // Понеділок поточного тижня
-const weekMon=()=>{const d=new Date();const dow=d.getDay();const diff=dow===0?-6:1-dow;d.setDate(d.getDate()+diff);d.setHours(0,0,0,0);return d;};
+const weekMon=()=>{const d=new Date();const dow=d.getDay();const diff=dow===0?-6:1-dow;d.setDate(d.getDate()+diff);d.setHours(12,0,0,0);return d;};
 
 // Генерація уроків за тижневим графіком
 const generateLessonsByRange=(student,schedule,fromDate,toDate,existingLessons)=>{
   const newLessons=[];
-  const from=new Date(fromDate+"T00:00:00");
-  const to=new Date(toDate+"T00:00:00");
+  // Парсимо дати о 12:00 щоб уникнути проблем з літнім/зимовим часом
+  const from=new Date(fromDate+"T12:00:00");
+  const to=new Date(toDate+"T12:00:00");
   // Починаємо з понеділка тижня який містить fromDate
   const start=new Date(from);
   const dow=start.getDay();
   const diff=dow===0?-6:1-dow;
   start.setDate(start.getDate()+diff);
+  start.setHours(12,0,0,0);
   const cur=new Date(start);
   while(cur<=to){
     for(const slot of schedule){
       const d=new Date(cur);
       d.setDate(d.getDate()+slot.day);
+      d.setHours(12,0,0,0);
       if(d<from||d>to)continue;
-      const dateStr=d.toISOString().split("T")[0];
+      const dateStr=localDateStr(d);
       const exists=existingLessons.some(l=>l.studentId===student.id&&l.date===dateStr&&l.time===slot.time);
       if(!exists){
         newLessons.push({id:uid(),studentId:student.id,date:dateStr,time:slot.time,status:"planned",paid:false,amount:student.lessonCost});
@@ -506,7 +511,7 @@ const Cabinet=({students,lessons,payments,onAdd,onUpdate,onDelete,onCancel,onGoT
   const weekDays=Array(7).fill(null).map((_,i)=>{
     const d=new Date(mon);
     d.setDate(d.getDate()+weekOffset*7+i);
-    return d.toISOString().split("T")[0];
+    return localDateStr(d);
   });
 
   // Унікальні часи що є в уроках цього тижня + стандартні
@@ -730,7 +735,7 @@ const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
   const[newTime,setNewTime]=useState("10:00");
   const[fromDate,setFromDate]=useState(today());
   const[toDate,setToDate]=useState(()=>{
-    const d=new Date();d.setMonth(d.getMonth()+3);return d.toISOString().split("T")[0];
+    const d=new Date();d.setMonth(d.getMonth()+3);return localDateStr(d);
   });
   const[genBusy,setGenBusy]=useState(false);
   const[genResult,setGenResult]=useState(null); // null | number
@@ -745,7 +750,7 @@ const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
     const mon=weekMon();
     const checkDate=new Date(mon);
     checkDate.setDate(checkDate.getDate()+Number(day));
-    const dateStr=checkDate.toISOString().split("T")[0];
+    const dateStr=localDateStr(checkDate);
     return allLessons.find(l=>l.date===dateStr&&l.time===time&&l.studentId!==student.id&&l.status!=="cancelled");
   };
 
