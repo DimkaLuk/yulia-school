@@ -98,7 +98,7 @@ function fbListen(callback) {
 </script>
 
 <script type="text/babel">
-const{useState,useEffect,useRef,useCallback}=React;
+const{useState,useEffect,useCallback}=React;
 
 const TG_TOKEN="8277315044:AAHmSDZPm13w8gp_1xrjfu1pHvd6Hl0QCDA";
 const TG_API=`https://api.telegram.org/bot${TG_TOKEN}`;
@@ -328,11 +328,8 @@ const LessonSheet=({lesson,students,onClose,onSave,onDelete,isNew,defaultDate})=
         <IField label="Час" type="time" value={l.time} onChange={v=>set("time",v)}/>
         <IField label="Вартість (₴)" type="number" value={l.amount} onChange={v=>set("amount",Number(v))}/>
         <IField label="Статус" value={l.status} onChange={v=>set("status",v)} options={[{v:"planned",l:"Заплановано"},{v:"completed",l:"Проведено"},{v:"cancelled",l:"Скасовано"}]}/>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px"}}>
-          <span style={{fontSize:16,color:iOS.label}}>Оплачено</span>
-          <div onClick={()=>set("paid",!l.paid)} style={{width:50,height:30,borderRadius:15,background:l.paid?iOS.green:iOS.fill,transition:"background 0.2s",cursor:"pointer",position:"relative",flexShrink:0}}>
-            <div style={{position:"absolute",top:3,left:l.paid?23:3,width:24,height:24,borderRadius:"50%",background:"#fff",boxShadow:"0 2px 6px rgba(0,0,0,0.2)",transition:"left 0.2s"}}/>
-          </div>
+        <div style={{padding:"12px 16px",background:"rgba(116,116,128,0.06)"}}>
+          <p style={{fontSize:13,color:iOS.label3,lineHeight:1.5}}>💡 Статус оплати розраховується автоматично на основі платежів учня.</p>
         </div>
       </Section>
       <div style={{padding:"0 16px",display:"flex",flexDirection:"column",gap:10}}>
@@ -353,29 +350,39 @@ const weekMon=()=>{const d=new Date();const dow=d.getDay();const diff=dow===0?-6
 // Генерація уроків за тижневим графіком
 const generateLessonsByRange=(student,schedule,fromDate,toDate,existingLessons)=>{
   const newLessons=[];
-  // Парсимо дати о 12:00 щоб уникнути проблем з літнім/зимовим часом
+  // Маппінг: наш slot.day (0=Пн..6=Нд) → JS getDay() (0=Нд,1=Пн..6=Сб)
+  const slotDayToJsDay=[1,2,3,4,5,6,0];
+
+  // Парсимо дати о 12:00 щоб уникнути зсуву UTC
   const from=new Date(fromDate+"T12:00:00");
   const to=new Date(toDate+"T12:00:00");
-  // Починаємо з понеділка тижня який містить fromDate
-  const start=new Date(from);
-  const dow=start.getDay();
-  const diff=dow===0?-6:1-dow;
-  start.setDate(start.getDate()+diff);
-  start.setHours(12,0,0,0);
-  const cur=new Date(start);
+  to.setHours(23,59,59,0);
+
+  // Перебираємо кожен день в діапазоні
+  const cur=new Date(from);
   while(cur<=to){
+    const jsDow=cur.getDay(); // поточний день тижня за JS (0=Нд)
     for(const slot of schedule){
-      const d=new Date(cur);
-      d.setDate(d.getDate()+slot.day);
-      d.setHours(12,0,0,0);
-      if(d<from||d>to)continue;
-      const dateStr=localDateStr(d);
-      const exists=existingLessons.some(l=>l.studentId===student.id&&l.date===dateStr&&l.time===slot.time);
-      if(!exists){
-        newLessons.push({id:uid(),studentId:student.id,date:dateStr,time:slot.time,status:"planned",paid:false,amount:student.lessonCost});
+      const targetJsDay=slotDayToJsDay[slot.day];
+      if(jsDow===targetJsDay){
+        const dateStr=localDateStr(cur);
+        const exists=existingLessons.some(
+          l=>l.studentId===student.id&&l.date===dateStr&&l.time===slot.time
+        );
+        if(!exists){
+          newLessons.push({
+            id:uid(),
+            studentId:student.id,
+            date:dateStr,
+            time:slot.time,
+            status:"planned",
+            paid:false,
+            amount:student.lessonCost,
+          });
+        }
       }
     }
-    cur.setDate(cur.getDate()+7);
+    cur.setDate(cur.getDate()+1); // наступний день
   }
   return newLessons;
 };
@@ -539,10 +546,11 @@ const Cabinet=({students,lessons,payments,onAdd,onUpdate,onDelete,onCancel,onGoT
           {/* Статуси */}
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
             <LBadge status={l.status}/>
-            <span style={{display:"inline-flex",alignItems:"center",gap:4,background:l.paid?iOS.greenT:iOS.fill3,color:l.paid?iOS.green:iOS.label3,fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20}}>
-              {l.paid?"✓ Оплачено":"Не оплачено"}
-            </span>
-            {cancelled&&<span style={{fontSize:11,color:iOS.red,fontWeight:600}}>⛔ Скасовано</span>}
+            {!cancelled&&(
+              <span style={{display:"inline-flex",alignItems:"center",gap:4,background:l.paid?iOS.greenT:iOS.fill3,color:l.paid?iOS.green:iOS.label3,fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20}}>
+                {l.paid?"✓ Оплачено":"Не оплачено"}
+              </span>
+            )}
           </div>
           {/* Кнопки дій */}
           {!cancelled&&(
@@ -738,38 +746,64 @@ const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
     const d=new Date();d.setMonth(d.getMonth()+3);return localDateStr(d);
   });
   const[genBusy,setGenBusy]=useState(false);
-  const[genResult,setGenResult]=useState(null); // null | number
-  const[saved,setSaved]=useState(false);
+  const[genResult,setGenResult]=useState(null);
+  // saved: false=не збережено, true=збережено, "dirty"=є незбережені зміни
+  const[saved,setSaved]=useState(true); // спочатку "збережено" (дані прийшли з бази)
   const DAYS=["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"];
 
-  // Sync if student prop changes
-  useState(()=>{setSchedule(student.schedule||[]);});
+  // Синхронізація коли змінюється учень
+  useEffect(()=>{
+    setSchedule(student.schedule||[]);
+    setGenResult(null);
+    setSaved(true); // дані з бази = вже збережено
+  },[student.id]);
 
+  // Перевірка конфлікту: чи зайнятий слот іншим учнем
+  // Шукаємо будь-який урок з таким самим часом і днем тижня (не тільки поточного тижня)
   const getConflict=(day,time)=>{
     if(!allLessons)return null;
-    const mon=weekMon();
-    const checkDate=new Date(mon);
-    checkDate.setDate(checkDate.getDate()+Number(day));
-    const dateStr=localDateStr(checkDate);
-    return allLessons.find(l=>l.date===dateStr&&l.time===time&&l.studentId!==student.id&&l.status!=="cancelled");
+    const slotDayToJsDay=[1,2,3,4,5,6,0]; // наш 0=Пн → JS 1=Пн
+    const targetJsDay=slotDayToJsDay[Number(day)];
+    // Шукаємо серед усіх майбутніх уроків (заплановані, не скасовані)
+    const conflict=allLessons.find(l=>{
+      if(l.studentId===student.id||l.status==="cancelled")return false;
+      if(l.time!==time)return false;
+      // Перевіряємо чи день тижня збігається
+      const d=new Date(l.date+"T12:00:00");
+      return d.getDay()===targetJsDay;
+    });
+    return conflict||null;
   };
+
+  // Попередній перегляд конфлікту для нового слоту
+  const newSlotConflict=getConflict(newDay,newTime);
+  // Чи є конфлікти серед поточного графіку
+  const hasConflicts=schedule.some(s=>getConflict(s.day,s.time));
 
   const addSlot=()=>{
     const day=Number(newDay);
     if(schedule.some(s=>s.day===day&&s.time===newTime))return;
+    // Дозволяємо додати навіть з конфліктом — але підсвітимо
     const ns=[...schedule,{day,time:newTime}];
     setSchedule(ns);
-    setSaved(false);setGenResult(null);
+    setSaved("dirty");
+    setGenResult(null);
   };
   const removeSlot=(day,time)=>{
     setSchedule(schedule.filter(s=>!(s.day===day&&s.time===time)));
-    setSaved(false);setGenResult(null);
+    setSaved("dirty");
+    setGenResult(null);
   };
   const saveSchedule=async()=>{
+    if(hasConflicts)return; // не зберігаємо якщо є конфлікти
     await onUpdateSchedule({...student,schedule});
     setSaved(true);
-    setTimeout(()=>setSaved(false),3000);
+    setGenResult(null);
   };
+
+  const scheduleChanged=saved==="dirty";
+  const isSaved=saved===true;
+  const canGenerate=isSaved&&schedule.length>0&&!hasConflicts;
 
   return(
     <Section title="📅 Щотижневий графік">
@@ -782,67 +816,117 @@ const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
       {[...schedule].sort((a,b)=>a.day-b.day||a.time.localeCompare(b.time)).map((s,i)=>{
         const conflict=getConflict(s.day,s.time);
         return(
-          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+          <div key={i} style={{
+            display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"12px 16px",
+            borderBottom:"0.5px solid rgba(60,60,67,0.12)",
+            background:conflict?"rgba(255,59,48,0.05)":"transparent",
+            borderLeft:conflict?"3px solid #FF3B30":"3px solid transparent",
+          }}>
             <div>
-              <span style={{fontSize:15,fontWeight:600,color:iOS.label}}>{DAYS[s.day]}</span>
-              <span style={{fontSize:15,fontWeight:700,color:iOS.blue,marginLeft:12}}>{s.time}</span>
-              {conflict&&<div style={{fontSize:11,color:iOS.red,marginTop:2}}>⚠ Зайнято іншим учнем цього тижня</div>}
+              <span style={{fontSize:15,fontWeight:600,color:conflict?iOS.red:iOS.label}}>{DAYS[s.day]}</span>
+              <span style={{fontSize:15,fontWeight:700,color:conflict?iOS.red:iOS.blue,marginLeft:12}}>{s.time}</span>
+              {conflict&&(()=>{
+                const st=allLessons.find(l=>l.studentId===conflict.studentId);
+                // Знаходимо ім'я учня через studentId
+                return<div style={{fontSize:11,color:iOS.red,marginTop:3,fontWeight:600}}>
+                  ⛔ Зайнято — {conflict.time}, {["Нд","Пн","Вт","Ср","Чт","Пт","Сб"][new Date(conflict.date+"T12:00:00").getDay()]}
+                </div>;
+              })()}
             </div>
             <button onClick={()=>removeSlot(s.day,s.time)}
-              style={{background:"rgba(255,59,48,0.1)",color:"#FF3B30",border:"none",borderRadius:8,padding:"5px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✕</button>
+              style={{background:"rgba(255,59,48,0.1)",color:"#FF3B30",border:"none",borderRadius:8,padding:"5px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0}}>✕</button>
           </div>
         );
       })}
 
-      {/* Додати слот */}
-      <div style={{padding:"12px 16px",display:"flex",gap:8,alignItems:"center",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
-        <select value={newDay} onChange={e=>setNewDay(e.target.value)}
-          style={{flex:1,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label,appearance:"none"}}>
-          {DAYS.map((d,i)=><option key={i} value={i}>{d}</option>)}
-        </select>
-        <input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}
-          style={{width:95,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
-        <button onClick={addSlot}
-          style={{background:"rgba(0,122,255,0.1)",color:"#007AFF",border:"none",borderRadius:10,padding:"9px 14px",fontSize:16,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+      {/* Додати новий слот */}
+      <div style={{padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:newSlotConflict?8:0}}>
+          <select value={newDay} onChange={e=>{setNewDay(e.target.value);}}
+            style={{flex:1,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:`1px solid ${newSlotConflict?"#FF3B30":"rgba(60,60,67,0.12)"}`,borderRadius:10,fontSize:14,color:iOS.label,appearance:"none"}}>
+            {DAYS.map((d,i)=><option key={i} value={i}>{d}</option>)}
+          </select>
+          <input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}
+            style={{width:95,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:`1px solid ${newSlotConflict?"#FF3B30":"rgba(60,60,67,0.12)"}`,borderRadius:10,fontSize:14,color:iOS.label}}/>
+          <button onClick={addSlot}
+            style={{background:"rgba(0,122,255,0.1)",color:"#007AFF",border:"none",borderRadius:10,padding:"9px 14px",fontSize:16,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+        </div>
+        {newSlotConflict&&(
+          <div style={{fontSize:12,color:iOS.red,fontWeight:600,padding:"6px 10px",background:"rgba(255,59,48,0.08)",borderRadius:8,marginTop:4}}>
+            ⛔ Цей час вже зайнятий іншим учнем
+          </div>
+        )}
       </div>
 
       {/* Зберегти графік */}
-      <div style={{padding:"10px 16px 4px",display:"flex",alignItems:"center",gap:10}}>
-        <IBtn sm v="tinted" color={iOS.blue} onClick={saveSchedule}>Зберегти графік</IBtn>
-        {saved&&<span style={{fontSize:13,color:iOS.green,fontWeight:600}}>✓ Збережено!</span>}
+      <div style={{padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+        {hasConflicts&&(
+          <div style={{padding:"8px 12px",background:"rgba(255,59,48,0.08)",borderRadius:8,marginBottom:10,fontSize:13,color:iOS.red,fontWeight:600}}>
+            ⛔ Є конфлікти — видаліть або змініть зайняті слоти перед збереженням
+          </div>
+        )}
+        {scheduleChanged&&!hasConflicts&&(
+          <div style={{padding:"8px 12px",background:"rgba(255,149,0,0.1)",borderRadius:8,marginBottom:10,fontSize:13,color:iOS.orange,fontWeight:600}}>
+            ⚠ Графік змінено — не забудьте зберегти!
+          </div>
+        )}
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <IBtn sm v="tinted" color={hasConflicts?iOS.label3:iOS.blue} disabled={hasConflicts||!scheduleChanged} onClick={saveSchedule}>
+            Зберегти графік
+          </IBtn>
+          {isSaved&&!scheduleChanged&&<span style={{fontSize:13,color:iOS.green,fontWeight:600}}>✓ Збережено</span>}
+        </div>
       </div>
 
       {/* Генерація по датах */}
       {schedule.length>0&&(
-        <div style={{padding:"12px 16px 16px",borderTop:"0.5px solid rgba(60,60,67,0.12)",marginTop:6}}>
+        <div style={{padding:"12px 16px 16px"}}>
           <div style={{fontSize:13,fontWeight:600,color:iOS.label2,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.03em"}}>Згенерувати уроки</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-            <div>
-              <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>Від</div>
-              <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}
-                style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+
+          {/* Блокування генерації якщо не збережено */}
+          {!isSaved&&(
+            <div style={{padding:"10px 12px",background:"rgba(255,149,0,0.1)",borderRadius:10,fontSize:13,color:iOS.orange,fontWeight:600}}>
+              ⚠ Спочатку збережіть графік!
             </div>
-            <div>
-              <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>До</div>
-              <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}
-                style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+          )}
+          {hasConflicts&&(
+            <div style={{padding:"10px 12px",background:"rgba(255,59,48,0.08)",borderRadius:10,fontSize:13,color:iOS.red,fontWeight:600}}>
+              ⛔ Усуньте конфлікти перед генерацією
             </div>
-          </div>
-          {genResult===null?(
-            <IBtn sm v="tinted" color={iOS.indigo} disabled={genBusy||!fromDate||!toDate} onClick={async()=>{
-              setGenBusy(true);
-              const newL=generateLessonsByRange(student,schedule,fromDate,toDate,allLessons);
-              if(newL.length>0)await onSave(newL);
-              setGenResult(newL.length);
-              setGenBusy(false);
-            }}>{genBusy?"Генерація...":"📅 Згенерувати уроки"}</IBtn>
-          ):(
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <p style={{fontSize:14,color:genResult>0?iOS.green:iOS.label2,fontWeight:600}}>
-                {genResult>0?`✓ Додано ${genResult} уроків!`:"Всі уроки вже існують"}
-              </p>
-              <button onClick={()=>setGenResult(null)} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,color:iOS.label2,cursor:"pointer"}}>Ще раз</button>
-            </div>
+          )}
+
+          {canGenerate&&(
+            <>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>Від</div>
+                  <input type="date" value={fromDate} onChange={e=>{setFromDate(e.target.value);setGenResult(null);}}
+                    style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>До</div>
+                  <input type="date" value={toDate} onChange={e=>{setToDate(e.target.value);setGenResult(null);}}
+                    style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+                </div>
+              </div>
+              {genResult===null?(
+                <IBtn sm v="tinted" color={iOS.indigo} disabled={genBusy||!fromDate||!toDate} onClick={async()=>{
+                  setGenBusy(true);
+                  const newL=generateLessonsByRange(student,schedule,fromDate,toDate,allLessons);
+                  if(newL.length>0)await onSave(newL);
+                  setGenResult(newL.length);
+                  setGenBusy(false);
+                }}>{genBusy?"Генерація...":"📅 Згенерувати уроки"}</IBtn>
+              ):(
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <p style={{fontSize:14,color:genResult>0?iOS.green:iOS.label2,fontWeight:600}}>
+                    {genResult>0?`✓ Додано ${genResult} уроків!`:"Всі уроки вже існують"}
+                  </p>
+                  <button onClick={()=>setGenResult(null)} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,color:iOS.label2,cursor:"pointer"}}>Ще раз</button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -941,7 +1025,7 @@ const StudentProfile=({student,lessons,allLessons,onEdit,onBack,onGenerate,onUpd
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:11,fontWeight:600,color:statusColor}}>{l.status==="completed"?"✓ Проведено":l.status==="cancelled"?"⛔ Скасовано":"Заплановано"}</span>
-                <span style={{fontSize:11,fontWeight:600,color:l.paid?iOS.green:iOS.label3}}>· {l.paid?"💳 Сплачено":"Не сплачено"}</span>
+                {!cancelled&&<span style={{fontSize:11,fontWeight:600,color:l.paid?iOS.green:iOS.label3}}>· {l.paid?"💳 Сплачено":"Не сплачено"}</span>}
               </div>
             </div>
           );
@@ -1494,11 +1578,10 @@ function App(){
 
   const fromReq=r=>{
     const ns={id:uid(),name:r.name,phone:r.phone,lessonCost:500,balance:0,notes:r.notes||"",tgChatId:"",status:"active"};
-    save({...data,students:[...students,ns],requests:requests.map(x=>x.id===r.id?{...r,status:"converted"}:x)});
+    save({lessons,payments,teacherChatId,students:[...students,ns],requests:requests.map(x=>x.id===r.id?{...r,status:"converted"}:x)});
   };
   const addReq=async r=>{
-    const updated={...data,requests:[...requests,r]};
-    save(updated);
+    save({students,lessons,payments,teacherChatId,requests:[...requests,r]});
     if(teacherChatId)await tgSend(teacherChatId,`📬 <b>Нова заявка!</b>\n\n👤 ${r.name}\n📞 ${r.phone}${r.time?`\n⏰ ${r.time}`:""}${r.notes?`\n📝 ${r.notes}`:""}`);
   };
 
@@ -1511,34 +1594,41 @@ function App(){
       onAdd={l=>{
         const newLessons=[...lessons,l];
         const recalced=recalcPaid(l.studentId,newLessons,payments,students);
-        save({...data,lessons:recalced});
+        save({students,payments,requests,teacherChatId,lessons:recalced});
       }}
       onUpdate={l=>{
         const newLessons=lessons.map(x=>x.id===l.id?l:x);
         const recalced=recalcPaid(l.studentId,newLessons,payments,students);
-        save({...data,lessons:recalced});
+        save({students,payments,requests,teacherChatId,lessons:recalced});
       }}
-      onDelete={id=>save({...data,lessons:lessons.filter(x=>x.id!==id)})}
+      onDelete={id=>save({students,payments,requests,teacherChatId,lessons:lessons.filter(x=>x.id!==id)})}
       onCancel={id=>{
         const lesson=lessons.find(l=>l.id===id);
         if(!lesson)return;
         const cancelled=lessons.map(l=>l.id===id?{...l,status:"cancelled",paid:false}:l);
         const recalced=recalcPaid(lesson.studentId,cancelled,payments,students);
-        save({...data,lessons:recalced});
+        save({students,payments,requests,teacherChatId,lessons:recalced});
       }}/>,
     students:<Students students={students} lessons={lessons} requests={requests}
-      onAdd={s=>save({...data,students:[...students,s]})}
-      onAddMany={newL=>save({...data,lessons:[...lessons,...newL]})}
-      onUpdate={s=>save({...data,students:students.map(x=>x.id===s.id?s:x)})}
-      onDelete={id=>save({...data,students:students.filter(x=>x.id!==id)})}
-      onUpdateRequest={r=>save({...data,requests:requests.map(x=>x.id===r.id?r:x)})}
+      onAdd={s=>save({lessons,payments,requests,teacherChatId,students:[...students,s]})}
+      onAddMany={newL=>{
+        const merged=[...lessons,...newL];
+        // Перераховуємо оплату для всіх учнів яким додали уроки
+        const affectedIds=[...new Set(newL.map(l=>l.studentId))];
+        let recalced=merged;
+        affectedIds.forEach(sid=>{recalced=recalcPaid(sid,recalced,payments,students);});
+        save({students,payments,requests,teacherChatId,lessons:recalced});
+      }}
+      onUpdate={s=>save({lessons,payments,requests,teacherChatId,students:students.map(x=>x.id===s.id?s:x)})}
+      onDelete={id=>save({lessons,payments,requests,teacherChatId,students:students.filter(x=>x.id!==id)})}
+      onUpdateRequest={r=>save({students,lessons,payments,teacherChatId,requests:requests.map(x=>x.id===r.id?r:x)})}
       onAddFromRequest={fromReq}/>,
     finance:<Finance students={students} lessons={lessons} payments={payments}
       onAddPayment={p=>{
         const nP=[...payments,p];
         const nS=students.map(s=>s.id===p.studentId?{...s,balance:s.balance+p.amount}:s);
         const recalced=recalcPaid(p.studentId,lessons,nP,nS);
-        save({...data,payments:nP,students:nS,lessons:recalced});
+        save({requests,teacherChatId,payments:nP,students:nS,lessons:recalced});
       }}
       onUpdatePayment={p=>{
         const oldP=payments.find(x=>x.id===p.id);
@@ -1546,18 +1636,18 @@ function App(){
         const nP=payments.map(x=>x.id===p.id?p:x);
         const nS=students.map(s=>s.id===p.studentId?{...s,balance:s.balance+diff}:s);
         const recalced=recalcPaid(p.studentId,lessons,nP,nS);
-        save({...data,payments:nP,students:nS,lessons:recalced});
+        save({requests,teacherChatId,payments:nP,students:nS,lessons:recalced});
       }}
       onDeletePayment={id=>{
         const p=payments.find(x=>x.id===id);
         const nP=payments.filter(x=>x.id!==id);
         const nS=students.map(s=>s.id===p?.studentId?{...s,balance:s.balance-p.amount}:s);
         const recalced=recalcPaid(p?.studentId,lessons,nP,nS);
-        save({...data,payments:nP,students:nS,lessons:recalced});
+        save({requests,teacherChatId,payments:nP,students:nS,lessons:recalced});
       }}/>,
     telegram:<Telegram students={students} lessons={lessons} teacherChatId={teacherChatId}
-      onSaveTeacherChatId={id=>save({...data,teacherChatId:id})}
-      onUpdateStudent={s=>save({...data,students:students.map(x=>x.id===s.id?s:x)})}/>,
+      onSaveTeacherChatId={id=>save({students,lessons,payments,requests,teacherChatId:id})}
+      onUpdateStudent={s=>save({lessons,payments,requests,teacherChatId,students:students.map(x=>x.id===s.id?s:x)})}/>,
     register:<Register onAdd={addReq}/>,
   };
 
