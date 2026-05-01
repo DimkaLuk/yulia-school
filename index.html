@@ -1198,8 +1198,33 @@ const Finance=({students,lessons,payments,onAddPayment,onUpdatePayment,onDeleteP
   const perSt=students.map(s=>{
     const ml=moL.filter(l=>l.studentId===s.id);
     const mp=moP.filter(p=>p.studentId===s.id);
-    return{s,done:ml.filter(l=>l.status==="completed").length,total:ml.filter(l=>l.status!=="cancelled").length,earned:ml.filter(l=>l.status==="completed").reduce((a,l)=>a+l.amount,0),paid:mp.reduce((a,p)=>a+p.amount,0)};
-  }).filter(x=>x.total>0||x.paid>0);
+    // Загальний аванс/борг учня — з усіх платежів і всіх проведених уроків (не лише за місяць)
+    const totalPaid=payments.filter(p=>p.studentId===s.id).reduce((a,p)=>a+p.amount,0);
+    const totalEarned=lessons.filter(l=>l.studentId===s.id&&l.status==="completed").reduce((a,l)=>a+l.amount,0);
+    const overallBalance=totalPaid-totalEarned; // >0 = аванс, <0 = борг
+    return{
+      s,
+      done:ml.filter(l=>l.status==="completed").length,
+      total:ml.filter(l=>l.status!=="cancelled").length,
+      earned:ml.filter(l=>l.status==="completed").reduce((a,l)=>a+l.amount,0),
+      paid:mp.reduce((a,p)=>a+p.amount,0),
+      overallBalance, // загальний аванс/борг по всій історії
+    };
+  }).filter(x=>x.total>0||x.paid>0||Math.abs(x.overallBalance)>0);
+
+  // Учні з авансом або боргом що НЕ з'являються у місячному perSt (перехідний залишок)
+  const carryover=students.filter(s=>{
+    const totalPaid=payments.filter(p=>p.studentId===s.id).reduce((a,p)=>a+p.amount,0);
+    const totalEarned=lessons.filter(l=>l.studentId===s.id&&l.status==="completed").reduce((a,l)=>a+l.amount,0);
+    const bal=totalPaid-totalEarned;
+    // Показуємо якщо є залишок і учень не в місячному списку
+    const inMonth=moL.some(l=>l.studentId===s.id)||moP.some(p=>p.studentId===s.id);
+    return !inMonth&&Math.abs(bal)>1; // >1 щоб уникнути копійчаних розбіжностей
+  }).map(s=>{
+    const totalPaid=payments.filter(p=>p.studentId===s.id).reduce((a,p)=>a+p.amount,0);
+    const totalEarned=lessons.filter(l=>l.studentId===s.id&&l.status==="completed").reduce((a,l)=>a+l.amount,0);
+    return{s,overallBalance:totalPaid-totalEarned};
+  });
 
   const PaySheet=()=>{
     const[sId,setSId]=useState(students[0]?.id||"");
@@ -1272,15 +1297,48 @@ const Finance=({students,lessons,payments,onAddPayment,onUpdatePayment,onDeleteP
               <div style={{height:4,background:iOS.fill3,borderRadius:4,overflow:"hidden",marginBottom:6}}>
                 <div style={{height:"100%",width:`${x.total>0?Math.min(100,Math.round(x.done/x.total*100)):0}%`,background:iOS.green,borderRadius:4}}/>
               </div>
-              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <span style={{fontSize:12,color:iOS.label3}}>{x.done}/{x.total} занять</span>
-                <span style={{fontSize:12,color:iOS.orange,fontWeight:600}}>Сплачено: {fmtM(x.paid)}</span>
-                {x.earned!==x.paid&&<span style={{fontSize:12,color:x.earned>x.paid?iOS.orange:iOS.green,fontWeight:600}}>{x.earned>x.paid?`Борг: ${fmtM(x.earned-x.paid)}`:`Аванс: ${fmtM(x.paid-x.earned)}`}</span>}
+                <span style={{fontSize:12,color:iOS.orange,fontWeight:600}}>За місяць: {fmtM(x.paid)}</span>
+                {/* Загальний залишок по всій історії */}
+                {Math.abs(x.overallBalance)>1&&(
+                  <span style={{
+                    fontSize:12,fontWeight:700,
+                    color:x.overallBalance>0?iOS.green:iOS.red,
+                    background:x.overallBalance>0?iOS.greenT:iOS.redT,
+                    padding:"2px 8px",borderRadius:6,
+                  }}>
+                    {x.overallBalance>0?`↑ Аванс: ${fmtM(x.overallBalance)}`:`↓ Борг: ${fmtM(Math.abs(x.overallBalance))}`}
+                  </span>
+                )}
               </div>
             </div>
           ))}
         </Section>
       )}
+      {/* Перехідний залишок — учні що не в цьому місяці але мають аванс/борг */}
+      {carryover.length>0&&(
+        <Section title="Перехідний залишок">
+          {carryover.map((x,i)=>(
+            <div key={x.s.id} style={{
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"12px 16px",
+              borderBottom:i<carryover.length-1?`0.5px solid ${iOS.sepNT}`:"none",
+            }}>
+              <span style={{fontSize:15,color:iOS.label,fontWeight:500}}>{x.s.name}</span>
+              <span style={{
+                fontSize:14,fontWeight:700,
+                color:x.overallBalance>0?iOS.green:iOS.red,
+                background:x.overallBalance>0?iOS.greenT:iOS.redT,
+                padding:"3px 10px",borderRadius:8,
+              }}>
+                {x.overallBalance>0?`↑ Аванс ${fmtM(x.overallBalance)}`:`↓ Борг ${fmtM(Math.abs(x.overallBalance))}`}
+              </span>
+            </div>
+          ))}
+        </Section>
+      )}
+
       <Section title="Платежі" footer="Натисніть на платіж щоб редагувати або видалити">
         {moP.length===0&&<div style={{padding:"14px 16px",color:iOS.label3,fontSize:14}}>Платежів немає</div>}
         {[...moP].reverse().map((p,i)=>{
