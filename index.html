@@ -747,145 +747,187 @@ const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
   });
   const[genBusy,setGenBusy]=useState(false);
   const[genResult,setGenResult]=useState(null);
-  // saved: false=не збережено, true=збережено, "dirty"=є незбережені зміни
-  const[saved,setSaved]=useState(true); // спочатку "збережено" (дані прийшли з бази)
+  const[saved,setSaved]=useState(true);
   const DAYS=["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"];
+  const DAYS_SHORT=["Нд","Пн","Вт","Ср","Чт","Пт","Сб"];
 
-  // Синхронізація коли змінюється учень
   useEffect(()=>{
     setSchedule(student.schedule||[]);
     setGenResult(null);
-    setSaved(true); // дані з бази = вже збережено
+    setSaved(true);
   },[student.id]);
 
-  // Перевірка конфлікту: чи зайнятий слот іншим учнем
-  // Шукаємо будь-який урок з таким самим часом і днем тижня (не тільки поточного тижня)
-  const getConflict=(day,time)=>{
-    if(!allLessons)return null;
-    const slotDayToJsDay=[1,2,3,4,5,6,0]; // наш 0=Пн → JS 1=Пн
+  // Перевірка конфлікту по КОНКРЕТНИХ ДАТАХ в обраному діапазоні
+  // Генеруємо всі дати слоту в [fromDate..toDate] і шукаємо перетин з існуючими уроками
+  const getConflictsForSlot=(day,time,from,to)=>{
+    if(!allLessons||!from||!to)return[];
+    const slotDayToJsDay=[1,2,3,4,5,6,0];
     const targetJsDay=slotDayToJsDay[Number(day)];
-    // Шукаємо серед усіх майбутніх уроків (заплановані, не скасовані)
-    const conflict=allLessons.find(l=>{
-      if(l.studentId===student.id||l.status==="cancelled")return false;
-      if(l.time!==time)return false;
-      // Перевіряємо чи день тижня збігається
-      const d=new Date(l.date+"T12:00:00");
-      return d.getDay()===targetJsDay;
+    const fromD=new Date(from+"T12:00:00");
+    const toD=new Date(to+"T12:00:00");
+    toD.setHours(23,59,59,0);
+    // Всі дати слоту в діапазоні
+    const slotDates=[];
+    const cur=new Date(fromD);
+    while(cur<=toD){
+      if(cur.getDay()===targetJsDay)slotDates.push(localDateStr(cur));
+      cur.setDate(cur.getDate()+1);
+    }
+    // Знаходимо конфлікти: інші учні що мають урок на ці конкретні дати і час
+    const conflicts=[];
+    slotDates.forEach(dateStr=>{
+      const conflict=allLessons.find(l=>
+        l.studentId!==student.id&&
+        l.status!=="cancelled"&&
+        l.date===dateStr&&
+        l.time===time
+      );
+      if(conflict)conflicts.push({date:dateStr,lesson:conflict});
     });
-    return conflict||null;
+    return conflicts;
   };
 
-  // Попередній перегляд конфлікту для нового слоту
-  const newSlotConflict=getConflict(newDay,newTime);
-  // Чи є конфлікти серед поточного графіку
-  const hasConflicts=schedule.some(s=>getConflict(s.day,s.time));
+  // Конфлікти для поточного розкладу (лише якщо є діапазон)
+  const slotConflicts=fromDate&&toDate
+    ?schedule.map(s=>({
+        slot:s,
+        conflicts:getConflictsForSlot(s.day,s.time,fromDate,toDate)
+      })).filter(x=>x.conflicts.length>0)
+    :[];
+  const hasConflicts=slotConflicts.length>0;
+
+  // Конфлікт для нового слоту (превʼю)
+  const newSlotConflicts=fromDate&&toDate
+    ?getConflictsForSlot(newDay,newTime,fromDate,toDate)
+    :[];
 
   const addSlot=()=>{
     const day=Number(newDay);
     if(schedule.some(s=>s.day===day&&s.time===newTime))return;
-    // Дозволяємо додати навіть з конфліктом — але підсвітимо
-    const ns=[...schedule,{day,time:newTime}];
-    setSchedule(ns);
-    setSaved("dirty");
-    setGenResult(null);
+    setSchedule([...schedule,{day,time:newTime}]);
+    setSaved("dirty");setGenResult(null);
   };
   const removeSlot=(day,time)=>{
     setSchedule(schedule.filter(s=>!(s.day===day&&s.time===time)));
-    setSaved("dirty");
-    setGenResult(null);
+    setSaved("dirty");setGenResult(null);
   };
   const saveSchedule=async()=>{
-    if(hasConflicts)return; // не зберігаємо якщо є конфлікти
+    if(hasConflicts)return;
     await onUpdateSchedule({...student,schedule});
-    setSaved(true);
-    setGenResult(null);
+    setSaved(true);setGenResult(null);
   };
 
   const scheduleChanged=saved==="dirty";
   const isSaved=saved===true;
-  const canGenerate=isSaved&&schedule.length>0&&!hasConflicts;
+  const canGenerate=isSaved&&schedule.length>0&&!hasConflicts&&fromDate&&toDate;
 
   return(
     <Section title="📅 Щотижневий графік">
-      {/* Поточні слоти */}
+
+      {/* КРОК 1: Спочатку вкажіть діапазон дат */}
+      <div style={{padding:"14px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)",background:"rgba(116,116,128,0.04)"}}>
+        <div style={{fontSize:12,color:iOS.label2,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Крок 1 — Вкажіть діапазон</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div>
+            <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>Від</div>
+            <input type="date" value={fromDate} onChange={e=>{setFromDate(e.target.value);setGenResult(null);}}
+              style={{width:"100%",padding:"9px 10px",background:iOS.fill4,border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>До</div>
+            <input type="date" value={toDate} onChange={e=>{setToDate(e.target.value);setGenResult(null);}}
+              style={{width:"100%",padding:"9px 10px",background:iOS.fill4,border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
+          </div>
+        </div>
+        {fromDate&&toDate&&<p style={{fontSize:11,color:iOS.label3,marginTop:6}}>Конфлікти перевіряються лише в цьому діапазоні</p>}
+      </div>
+
+      {/* КРОК 2: Слоти графіку */}
+      <div style={{padding:"10px 16px 4px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+        <div style={{fontSize:12,color:iOS.label2,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Крок 2 — Дні і час занять</div>
+      </div>
+
       {schedule.length===0&&(
-        <div style={{padding:"14px 16px",fontSize:14,color:iOS.label3}}>
-          Графік не встановлено. Додайте день і час нижче.
+        <div style={{padding:"10px 16px 14px",fontSize:14,color:iOS.label3}}>
+          Додайте день і час нижче.
         </div>
       )}
       {[...schedule].sort((a,b)=>a.day-b.day||a.time.localeCompare(b.time)).map((s,i)=>{
-        const conflict=getConflict(s.day,s.time);
+        const sc=slotConflicts.find(x=>x.slot.day===s.day&&x.slot.time===s.time);
+        const hasC=sc&&sc.conflicts.length>0;
         return(
           <div key={i} style={{
-            display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"12px 16px",
-            borderBottom:"0.5px solid rgba(60,60,67,0.12)",
-            background:conflict?"rgba(255,59,48,0.05)":"transparent",
-            borderLeft:conflict?"3px solid #FF3B30":"3px solid transparent",
+            display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+            padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)",
+            background:hasC?"rgba(255,59,48,0.05)":"transparent",
+            borderLeft:hasC?"3px solid #FF3B30":"none",
           }}>
-            <div>
-              <span style={{fontSize:15,fontWeight:600,color:conflict?iOS.red:iOS.label}}>{DAYS[s.day]}</span>
-              <span style={{fontSize:15,fontWeight:700,color:conflict?iOS.red:iOS.blue,marginLeft:12}}>{s.time}</span>
-              {conflict&&(()=>{
-                const st=allLessons.find(l=>l.studentId===conflict.studentId);
-                // Знаходимо ім'я учня через studentId
-                return<div style={{fontSize:11,color:iOS.red,marginTop:3,fontWeight:600}}>
-                  ⛔ Зайнято — {conflict.time}, {["Нд","Пн","Вт","Ср","Чт","Пт","Сб"][new Date(conflict.date+"T12:00:00").getDay()]}
-                </div>;
-              })()}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:hasC?4:0}}>
+                <span style={{fontSize:15,fontWeight:600,color:hasC?iOS.red:iOS.label}}>{DAYS[s.day]}</span>
+                <span style={{fontSize:15,fontWeight:700,color:hasC?iOS.red:iOS.blue}}>{s.time}</span>
+              </div>
+              {hasC&&sc.conflicts.map((c,ci)=>(
+                <div key={ci} style={{fontSize:11,color:iOS.red,fontWeight:600,marginTop:2}}>
+                  ⛔ {c.date} зайнято іншим учнем
+                </div>
+              ))}
             </div>
             <button onClick={()=>removeSlot(s.day,s.time)}
-              style={{background:"rgba(255,59,48,0.1)",color:"#FF3B30",border:"none",borderRadius:8,padding:"5px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0}}>✕</button>
+              style={{background:"rgba(255,59,48,0.1)",color:"#FF3B30",border:"none",borderRadius:8,padding:"5px 12px",fontSize:13,fontWeight:600,cursor:"pointer",flexShrink:0,marginLeft:8}}>✕</button>
           </div>
         );
       })}
 
-      {/* Додати новий слот */}
+      {/* Додати слот */}
       <div style={{padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
-        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:newSlotConflict?8:0}}>
-          <select value={newDay} onChange={e=>{setNewDay(e.target.value);}}
-            style={{flex:1,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:`1px solid ${newSlotConflict?"#FF3B30":"rgba(60,60,67,0.12)"}`,borderRadius:10,fontSize:14,color:iOS.label,appearance:"none"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <select value={newDay} onChange={e=>setNewDay(e.target.value)}
+            style={{flex:1,padding:"9px 10px",background:iOS.fill4,border:`1px solid ${newSlotConflicts.length?"#FF3B30":"rgba(60,60,67,0.12)"}`,borderRadius:10,fontSize:14,color:iOS.label,appearance:"none"}}>
             {DAYS.map((d,i)=><option key={i} value={i}>{d}</option>)}
           </select>
           <input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}
-            style={{width:95,padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:`1px solid ${newSlotConflict?"#FF3B30":"rgba(60,60,67,0.12)"}`,borderRadius:10,fontSize:14,color:iOS.label}}/>
+            style={{width:95,padding:"9px 10px",background:iOS.fill4,border:`1px solid ${newSlotConflicts.length?"#FF3B30":"rgba(60,60,67,0.12)"}`,borderRadius:10,fontSize:14,color:iOS.label}}/>
           <button onClick={addSlot}
             style={{background:"rgba(0,122,255,0.1)",color:"#007AFF",border:"none",borderRadius:10,padding:"9px 14px",fontSize:16,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
         </div>
-        {newSlotConflict&&(
-          <div style={{fontSize:12,color:iOS.red,fontWeight:600,padding:"6px 10px",background:"rgba(255,59,48,0.08)",borderRadius:8,marginTop:4}}>
-            ⛔ Цей час вже зайнятий іншим учнем
+        {newSlotConflicts.length>0&&(
+          <div style={{marginTop:6,padding:"6px 10px",background:"rgba(255,59,48,0.08)",borderRadius:8}}>
+            <p style={{fontSize:12,color:iOS.red,fontWeight:600,margin:"0 0 2px"}}>⛔ Конфлікт в обраному діапазоні:</p>
+            {newSlotConflicts.slice(0,3).map((c,i)=>(
+              <p key={i} style={{fontSize:11,color:iOS.red,margin:0}}>{c.date} — {DAYS_SHORT[new Date(c.date+"T12:00:00").getDay()]} зайнято</p>
+            ))}
+            {newSlotConflicts.length>3&&<p style={{fontSize:11,color:iOS.red,margin:0}}>...і ще {newSlotConflicts.length-3} дат</p>}
           </div>
         )}
       </div>
 
-      {/* Зберегти графік */}
+      {/* Зберегти */}
       <div style={{padding:"12px 16px",borderBottom:"0.5px solid rgba(60,60,67,0.12)"}}>
+        <div style={{fontSize:12,color:iOS.label2,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Крок 3 — Збережіть графік</div>
         {hasConflicts&&(
-          <div style={{padding:"8px 12px",background:"rgba(255,59,48,0.08)",borderRadius:8,marginBottom:10,fontSize:13,color:iOS.red,fontWeight:600}}>
-            ⛔ Є конфлікти — видаліть або змініть зайняті слоти перед збереженням
+          <div style={{padding:"8px 12px",background:"rgba(255,59,48,0.08)",borderRadius:8,marginBottom:8,fontSize:13,color:iOS.red,fontWeight:600}}>
+            ⛔ Є конфлікти — видаліть зайняті слоти
           </div>
         )}
         {scheduleChanged&&!hasConflicts&&(
-          <div style={{padding:"8px 12px",background:"rgba(255,149,0,0.1)",borderRadius:8,marginBottom:10,fontSize:13,color:iOS.orange,fontWeight:600}}>
-            ⚠ Графік змінено — не забудьте зберегти!
+          <div style={{padding:"8px 12px",background:"rgba(255,149,0,0.1)",borderRadius:8,marginBottom:8,fontSize:13,color:iOS.orange,fontWeight:600}}>
+            ⚠ Є незбережені зміни
           </div>
         )}
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <IBtn sm v="tinted" color={hasConflicts?iOS.label3:iOS.blue} disabled={hasConflicts||!scheduleChanged} onClick={saveSchedule}>
-            Зберегти графік
-          </IBtn>
+          <IBtn sm v="tinted" color={hasConflicts?iOS.label3:iOS.blue}
+            disabled={hasConflicts||(!scheduleChanged&&isSaved)}
+            onClick={saveSchedule}>Зберегти графік</IBtn>
           {isSaved&&!scheduleChanged&&<span style={{fontSize:13,color:iOS.green,fontWeight:600}}>✓ Збережено</span>}
         </div>
       </div>
 
-      {/* Генерація по датах */}
+      {/* Генерація */}
       {schedule.length>0&&(
         <div style={{padding:"12px 16px 16px"}}>
-          <div style={{fontSize:13,fontWeight:600,color:iOS.label2,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.03em"}}>Згенерувати уроки</div>
-
-          {/* Блокування генерації якщо не збережено */}
-          {!isSaved&&(
+          <div style={{fontSize:12,color:iOS.label2,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>Крок 4 — Згенерувати уроки</div>
+          {!isSaved&&!hasConflicts&&(
             <div style={{padding:"10px 12px",background:"rgba(255,149,0,0.1)",borderRadius:10,fontSize:13,color:iOS.orange,fontWeight:600}}>
               ⚠ Спочатку збережіть графік!
             </div>
@@ -895,38 +937,23 @@ const ScheduleSection=({student,allLessons,onSave,onUpdateSchedule})=>{
               ⛔ Усуньте конфлікти перед генерацією
             </div>
           )}
-
           {canGenerate&&(
-            <>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                <div>
-                  <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>Від</div>
-                  <input type="date" value={fromDate} onChange={e=>{setFromDate(e.target.value);setGenResult(null);}}
-                    style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
-                </div>
-                <div>
-                  <div style={{fontSize:11,color:iOS.label3,marginBottom:4}}>До</div>
-                  <input type="date" value={toDate} onChange={e=>{setToDate(e.target.value);setGenResult(null);}}
-                    style={{width:"100%",padding:"9px 10px",background:"rgba(116,116,128,0.08)",border:"1px solid rgba(60,60,67,0.12)",borderRadius:10,fontSize:14,color:iOS.label}}/>
-                </div>
+            genResult===null?(
+              <IBtn sm v="tinted" color={iOS.indigo} disabled={genBusy} onClick={async()=>{
+                setGenBusy(true);
+                const newL=generateLessonsByRange(student,schedule,fromDate,toDate,allLessons);
+                if(newL.length>0)await onSave(newL);
+                setGenResult(newL.length);
+                setGenBusy(false);
+              }}>{genBusy?"Генерація...":"📅 Згенерувати уроки"}</IBtn>
+            ):(
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <p style={{fontSize:14,color:genResult>0?iOS.green:iOS.label2,fontWeight:600}}>
+                  {genResult>0?`✓ Додано ${genResult} уроків!`:"Всі уроки вже існують"}
+                </p>
+                <button onClick={()=>setGenResult(null)} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,color:iOS.label2,cursor:"pointer"}}>Ще раз</button>
               </div>
-              {genResult===null?(
-                <IBtn sm v="tinted" color={iOS.indigo} disabled={genBusy||!fromDate||!toDate} onClick={async()=>{
-                  setGenBusy(true);
-                  const newL=generateLessonsByRange(student,schedule,fromDate,toDate,allLessons);
-                  if(newL.length>0)await onSave(newL);
-                  setGenResult(newL.length);
-                  setGenBusy(false);
-                }}>{genBusy?"Генерація...":"📅 Згенерувати уроки"}</IBtn>
-              ):(
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <p style={{fontSize:14,color:genResult>0?iOS.green:iOS.label2,fontWeight:600}}>
-                    {genResult>0?`✓ Додано ${genResult} уроків!`:"Всі уроки вже існують"}
-                  </p>
-                  <button onClick={()=>setGenResult(null)} style={{background:iOS.fill3,border:"none",borderRadius:8,padding:"5px 10px",fontSize:12,color:iOS.label2,cursor:"pointer"}}>Ще раз</button>
-                </div>
-              )}
-            </>
+            )
           )}
         </div>
       )}
@@ -1020,12 +1047,18 @@ const StudentProfile=({student,lessons,allLessons,onEdit,onBack,onGenerate,onUpd
           const statusColor={planned:iOS.orange,completed:iOS.green,cancelled:iOS.red}[l.status]||iOS.orange;
           return(
             <div key={l.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 16px",borderBottom:i<arr.length-1?"0.5px solid rgba(60,60,67,0.12)":"none",opacity:cancelled?0.55:1,background:cancelled?"rgba(255,59,48,0.03)":"transparent"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:14,color:cancelled?iOS.label3:iOS.label,textDecoration:cancelled?"line-through":"none",fontWeight:500}}>{fmtD(l.date)} · {l.time}</span>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:14,color:cancelled?iOS.label3:iOS.label,textDecoration:cancelled?"line-through":"none",fontWeight:500}}>
+                  {fmtD(l.date)}
+                </span>
+                <span style={{fontSize:12,color:iOS.label3,background:iOS.fill3,padding:"1px 7px",borderRadius:6}}>
+                  {["Нд","Пн","Вт","Ср","Чт","Пт","Сб"][new Date(l.date+"T12:00:00").getDay()]}
+                </span>
+                <span style={{fontSize:13,color:cancelled?iOS.label3:iOS.label2}}>{l.time}</span>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                 <span style={{fontSize:11,fontWeight:600,color:statusColor}}>{l.status==="completed"?"✓ Проведено":l.status==="cancelled"?"⛔ Скасовано":"Заплановано"}</span>
-                {!cancelled&&<span style={{fontSize:11,fontWeight:600,color:l.paid?iOS.green:iOS.label3}}>· {l.paid?"💳 Сплачено":"Не сплачено"}</span>}
+                {!cancelled&&<span style={{fontSize:11,fontWeight:600,color:l.paid?iOS.green:iOS.label3}}>· {l.paid?"💳":"—"}</span>}
               </div>
             </div>
           );
