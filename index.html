@@ -1047,14 +1047,14 @@ const StudentProfile=({student,lessons,allLessons,onEdit,onBack,onGenerate,onUpd
           const statusColor={planned:iOS.orange,completed:iOS.green,cancelled:iOS.red}[l.status]||iOS.orange;
           return(
             <div key={l.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 16px",borderBottom:i<arr.length-1?"0.5px solid rgba(60,60,67,0.12)":"none",opacity:cancelled?0.55:1,background:cancelled?"rgba(255,59,48,0.03)":"transparent"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:14,color:cancelled?iOS.label3:iOS.label,textDecoration:cancelled?"line-through":"none",fontWeight:500}}>
                   {fmtD(l.date)}
                 </span>
-                <span style={{fontSize:12,color:iOS.label3,background:iOS.fill3,padding:"1px 7px",borderRadius:6}}>
-                  {["Нд","Пн","Вт","Ср","Чт","Пт","Сб"][new Date(l.date+"T12:00:00").getDay()]}
+                <span style={{fontSize:14,color:cancelled?iOS.label3:iOS.label2,textDecoration:cancelled?"line-through":"none"}}>
+                  {["Неділя","Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота"][new Date(l.date+"T12:00:00").getDay()]}
                 </span>
-                <span style={{fontSize:13,color:cancelled?iOS.label3:iOS.label2}}>{l.time}</span>
+                <span style={{fontSize:13,color:cancelled?iOS.label3:iOS.label3}}>· {l.time}</span>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                 <span style={{fontSize:11,fontWeight:600,color:statusColor}}>{l.status==="completed"?"✓ Проведено":l.status==="cancelled"?"⛔ Скасовано":"Заплановано"}</span>
